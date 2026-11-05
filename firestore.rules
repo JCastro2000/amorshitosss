@@ -47,6 +47,16 @@ service cloud.firestore {
         && request.resource.data.data.size() < 800000;
     }
 
+    // Lista de compras compartida.
+    match /compras/{id} {
+      allow read, delete: if autorizado();
+      allow create, update: if autorizado()
+        && request.resource.data.nombre is string
+        && request.resource.data.nombre.size() > 0
+        && request.resource.data.nombre.size() <= 80
+        && request.resource.data.comprado is bool;
+    }
+
     // Presencia: cada persona escribe solo su propio documento; la pareja los lee para ver quién está conectado.
     match /presencia/{uid} {
       allow read: if autorizado();

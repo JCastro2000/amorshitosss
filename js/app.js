@@ -6,12 +6,14 @@ import { todayStr, dayLabel, dayDetail, timeLabel, byDate } from './dates.js';
 import { CATEGORIAS_BASE, tint, validar } from './categorias.js';
 import { settingsView } from './ajustes.js';
 import * as burbujas from './burbujas.js';
+import { comprasView } from './compras.js';
 
 apariencia.apply(); // antes de dibujar nada, para que no parpadee
 
 const USER_KEY = 'amorshitos.user';
 const EVENTS_KEY = 'amorshitos.events';
 const CATS_KEY = 'amorshitos.categorias';
+const COMPRAS_KEY = 'amorshitos.compras';
 const store = {
   read(key) {
     try {
@@ -28,12 +30,14 @@ const store = {
   },
 };
 
-// status: loading | login | ok | denied;  tab: eventos | ajustes
+// status: loading | login | ok | denied;  tab: eventos | compras | ajustes
 const state = {
   status: 'loading',
   tab: 'eventos',
   user: store.read(USER_KEY),
   events: store.read(EVENTS_KEY) ?? [],
+  compras: store.read(COMPRAS_KEY) ?? [],
+  borradorCompra: '', // lo que se está escribiendo en "Agregar a la lista"
   categorias: validar(store.read(CATS_KEY)) ?? CATEGORIAS_BASE,
   filter: 'todos',
   error: '',
@@ -47,11 +51,18 @@ const categoria = (id) => state.categorias.find((c) => c.id === id) ?? { id, nom
 
 // ---------- Pantallas ----------
 
+let vistaCompras = null; // la pestaña de compras abierta, para actualizar sus listas sin redibujarla entera
+
 function render() {
   const y = window.scrollY;
   const views = { loading: loadingView, login: loginView, denied: deniedView };
+  vistaCompras = null;
   if (state.status === 'ok') {
-    root.replaceChildren(state.tab === 'ajustes' ? settingsView(ctx) : listView(), tabBar());
+    let vista;
+    if (state.tab === 'ajustes') vista = settingsView(ctx);
+    else if (state.tab === 'compras') vista = vistaCompras = comprasView(ctx);
+    else vista = listView();
+    root.replaceChildren(vista, tabBar());
   } else {
     root.replaceChildren(views[state.status]());
   }
@@ -126,7 +137,7 @@ function tabBar() {
       window.scrollTo(0, 0);
     },
   }, icon(ico, 24), h('span', {}, label));
-  return h('nav', { class: 'tabbar', 'aria-label': 'Secciones' }, tab('eventos', 'Eventos', 'list'), tab('ajustes', 'Ajustes', 'tune'));
+  return h('nav', { class: 'tabbar', 'aria-label': 'Secciones' }, tab('eventos', 'Eventos', 'list'), tab('compras', 'Compras', 'cart'), tab('ajustes', 'Ajustes', 'tune'));
 }
 
 function listView() {
@@ -337,7 +348,9 @@ function setUser(user) {
     state.status = 'login';
     state.tab = 'eventos';
     state.events = [];
+    state.compras = [];
     store.write(EVENTS_KEY, null);
+    store.write(COMPRAS_KEY, null);
   }
   render();
 }
@@ -359,6 +372,13 @@ function onApariencia(data) {
   if (data) apariencia.applyRemote(data);
   render();
   actualizarBurbujas(); // por si la otra persona las prendió o apagó
+}
+
+// Si la pestaña de compras está abierta se actualizan solo sus listas, para no interrumpir lo que se escribe.
+function onCompras(list) {
+  state.compras = list;
+  store.write(COMPRAS_KEY, list.filter((c) => !c.pendiente));
+  vistaCompras?.refresh();
 }
 
 function onPresencia(list) {
@@ -391,7 +411,7 @@ if (['localhost', '127.0.0.1'].includes(location.hostname)) {
 }
 
 render();
-cloud.start({ onUser: setUser, onEvents: setEvents, onCategories: setCategorias, onApariencia, onFoto, onPresencia, onError: onCloudError }).catch(() => {
+cloud.start({ onUser: setUser, onEvents: setEvents, onCategories: setCategorias, onApariencia, onFoto, onPresencia, onCompras, onError: onCloudError }).catch(() => {
   // No se pudo cargar Firebase (sin internet la primera vez): si ya había sesión se sigue con lo guardado.
   if (!state.user) {
     state.status = 'login';

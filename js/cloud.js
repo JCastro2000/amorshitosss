@@ -5,6 +5,7 @@
 //   config/categorias   { items: [{ id, nombre, color }], actualizado }
 //   config/apariencia   { tema, fondo, acento, burbujas, actualizado }   estilo compartido por la pareja
 //   config/foto         { data (imagen JPEG como texto), actualizado }   la foto de "Nuestra foto"
+//   compras/{id}        { nombre, comprado, por, compradoPor, creado, actualizado }   lista de compras compartida
 //   presencia/{uid}     { nombre, iniciales, ultima }   "latido" cada minuto mientras la app está abierta
 // Solo pueden leer y escribir los correos que están en la colección "allowed" (ver firestore.rules).
 // Firestore guarda una copia en el teléfono: sin internet se puede ver y editar, y se sincroniza al volver.
@@ -52,8 +53,8 @@ function load() {
   return loading;
 }
 
-// onUser(usuario | null), onEvents(lista), onCategories(lista | null), onApariencia(datos | null), onFoto(texto | null), onPresencia(lista), onError(error)
-export async function start({ onUser, onEvents, onCategories, onApariencia, onFoto, onPresencia, onError }) {
+// onUser(usuario | null), onEvents(lista), onCategories(lista | null), onApariencia(datos | null), onFoto(texto | null), onPresencia(lista), onCompras(lista), onError(error)
+export async function start({ onUser, onEvents, onCategories, onApariencia, onFoto, onPresencia, onCompras, onError }) {
   const { auth, fs, a, db } = await load();
   let unsubscribe = [];
   auth.onAuthStateChanged(a, (user) => {
@@ -75,6 +76,10 @@ export async function start({ onUser, onEvents, onCategories, onApariencia, onFo
       fs.onSnapshot(fs.doc(db, 'config', 'categorias'), (snap) => onCategories(snap.data()?.items ?? null), onError),
       fs.onSnapshot(fs.doc(db, 'config', 'apariencia'), (snap) => onApariencia(snap.data() ?? null), onError),
       fs.onSnapshot(fs.doc(db, 'config', 'foto'), (snap) => onFoto(snap.data()?.data ?? null), onError),
+      fs.onSnapshot(fs.collection(db, 'compras'), (snap) => onCompras(snap.docs.map((d) => {
+        const x = d.data();
+        return { id: d.id, nombre: x.nombre ?? '', comprado: !!x.comprado, por: x.por ?? '', compradoPor: x.compradoPor ?? '', pendiente: d.metadata.hasPendingWrites };
+      })), onError),
       fs.onSnapshot(fs.collection(db, 'presencia'), (snap) => onPresencia(snap.docs.map((d) => {
         const x = d.data({ serverTimestamps: 'estimate' });
         return { id: d.id, nombre: x.nombre, iniciales: x.iniciales, ultima: x.ultima?.toMillis?.() ?? 0 };
@@ -128,6 +133,30 @@ export async function latido(user, activo) {
     iniciales: user.iniciales ?? user.name.charAt(0).toUpperCase(),
     ultima: activo ? fs.serverTimestamp() : fs.Timestamp.fromMillis(0),
   });
+}
+
+// ---------- Lista de compras ----------
+
+export async function agregarCompra(nombre, user) {
+  const { fs, db } = await load();
+  return fs.addDoc(fs.collection(db, 'compras'), { nombre, comprado: false, por: user.name, creado: fs.serverTimestamp(), actualizado: fs.serverTimestamp() });
+}
+
+export async function marcarCompra(id, comprado, user) {
+  const { fs, db } = await load();
+  return fs.setDoc(fs.doc(db, 'compras', id), { comprado, compradoPor: comprado ? user.name : '', actualizado: fs.serverTimestamp() }, { merge: true });
+}
+
+export async function renombrarCompra(id, nombre) {
+  const { fs, db } = await load();
+  return fs.setDoc(fs.doc(db, 'compras', id), { nombre, actualizado: fs.serverTimestamp() }, { merge: true });
+}
+
+export async function borrarCompras(ids) {
+  const { fs, db } = await load();
+  const lote = fs.writeBatch(db);
+  ids.forEach((id) => lote.delete(fs.doc(db, 'compras', id)));
+  return lote.commit();
 }
 
 export async function removeEvent(id) {

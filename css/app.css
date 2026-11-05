@@ -438,6 +438,50 @@ button { cursor: pointer; }
 .fondo .label { font-size: 0.78rem; text-align: center; }
 .btn.small { padding: 6px 12px; font-size: 0.85rem; align-self: flex-start; }
 
+/* Lista de compras */
+.agregar { display: flex; gap: 8px; margin-bottom: 10px; }
+.agregar input {
+  flex: 1;
+  min-width: 0;
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+  color: var(--text);
+  font-size: 1rem;
+}
+.lista-compras { list-style: none; margin: 8px 0 0; padding: 0; }
+.compra {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 6px;
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
+  box-shadow: var(--shadow);
+}
+.compra input[type='checkbox'] { flex: none; width: 26px; height: 26px; margin: 0; accent-color: var(--accent); }
+.compra .nombre {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 8px 0;
+  border: 0;
+  background: none;
+  text-align: left;
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+}
+.compra .nombre small { color: var(--muted); font-size: 0.78rem; }
+.compra.hecho .nombre span { text-decoration: line-through; color: var(--muted); }
+.compra.hecho { opacity: 0.8; box-shadow: none; }
+.comprados { margin-top: 24px; }
+.comprados-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.comprados-head h2 { font-size: 1rem; color: var(--muted); }
+
 /* Burbujas de conexión (quién tiene la app abierta) */
 #burbujas { position: fixed; inset: 0; z-index: 8; overflow: hidden; pointer-events: none; }
 .burbuja {
