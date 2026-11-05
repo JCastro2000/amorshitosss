@@ -481,3 +481,26 @@ button { cursor: pointer; }
 @media (prefers-reduced-motion: reduce) {
   .burbuja.junta svg { animation: none; }
 }
+
+/* Simulador de conexión (solo se crea en localhost) */
+.simulador {
+  position: fixed;
+  left: 8px;
+  right: 8px;
+  bottom: calc(var(--tabbar) + 8px + env(safe-area-inset-bottom));
+  z-index: 9;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px dashed var(--accent);
+  border-radius: 12px;
+  background: var(--sheet, var(--card));
+  color: var(--text);
+  font-size: 0.8rem;
+}
+.simulador button { padding: 5px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: inherit; font-size: 0.8rem; }
+.simulador button.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.sim-estado { padding: 2px 8px; border-radius: 999px; background: var(--line); }
+.sim-estado.on { background: var(--c-verde); color: #fff; }

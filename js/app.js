@@ -282,6 +282,7 @@ function eventForm(ev = null) {
 const LATIDO_MS = 60000; // cada cuánto avisa que sigue conectado
 const VIGENCIA_MS = 150000; // sin latido en este tiempo, se considera desconectado
 let presencia = [];
+let simulada = false; // solo en localhost: ver js/simulador.js
 let latidoTimer = null;
 let refrescoTimer = null;
 
@@ -295,9 +296,10 @@ function actualizarBurbujas() {
   if (!conectado() || apariencia.load().burbujas === false) return burbujas.update({ yo: null, otros: [] });
   const iniciales = (p) => p.iniciales || p.nombre?.charAt(0).toUpperCase() || '?';
   // Cada persona tiene siempre el mismo color, en los dos teléfonos: se reparten según el orden de sus ids.
-  const ids = [...new Set([state.user.uid, ...presencia.map((p) => p.id)])].sort();
+  const gente = simulada ? [...presencia, { id: 'simulada', iniciales: 'LV', ultima: Date.now() }] : presencia;
+  const ids = [...new Set([state.user.uid, ...gente.map((p) => p.id)])].sort();
   const tono = (id) => (ids.indexOf(id) === 0 ? 'var(--c-rosa)' : 'var(--c-morado)');
-  const otros = presencia
+  const otros = gente
     .filter((p) => p.id !== state.user.uid && Date.now() - p.ultima < VIGENCIA_MS)
     .map((p) => ({ id: p.id, iniciales: iniciales(p), tono: tono(p.id) }));
   burbujas.update({ yo: { id: state.user.uid, iniciales: iniciales(state.user), tono: tono(state.user.uid) }, otros });
@@ -375,6 +377,16 @@ function onCloudError(e) {
   } else {
     toast(cloud.friendlyError(e), 5000);
   }
+}
+
+// Para probar las burbujas sin otra persona: panel que simula que la pareja se conecta y desconecta.
+if (['localhost', '127.0.0.1'].includes(location.hostname)) {
+  import('./simulador.js').then((m) => m.init({
+    onChange: (conectada) => {
+      simulada = conectada;
+      actualizarBurbujas();
+    },
+  }));
 }
 
 render();
