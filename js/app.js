@@ -122,9 +122,12 @@ function listView() {
   const upcoming = visible.filter((e) => e.fecha >= today).sort(byDate);
   const past = visible.filter((e) => e.fecha < today).sort((a, b) => byDate(b, a));
 
+  // Las categorías con más eventos van primero; a igual cantidad, queda el orden de Ajustes.
+  const total = (c) => state.events.filter((e) => e.color === c.id).length;
+  const byUse = [...state.categorias].sort((a, b) => total(b) - total(a));
   const chips = h('div', { class: 'chips', role: 'group', 'aria-label': 'Filtrar por color' },
     chip('todos', 'Todos'),
-    ...state.categorias.map((c) => chip(c.id, c.nombre, c.color)));
+    ...byUse.map((c) => chip(c.id, c.nombre, c.color)));
 
   return h('main', { class: 'page' },
     h('header', { class: 'head' },
