@@ -1,63 +1,27 @@
-// Amorshitos: lista de eventos compartida entre dos personas.
+// Amorshitos: eventos, compras y tareas compartidos entre dos personas.
+// Este archivo arma la pantalla y conecta la nube con el resto de los módulos.
 import * as cloud from './cloud.js';
 import * as apariencia from './apariencia.js';
-import { h, toast, openSheet, openMenu, confirmAction, icon } from './ui.js';
-import { todayStr, dayLabel, dayDetail, timeLabel, byDate } from './dates.js';
-import { CATEGORIAS_BASE, tint, validar } from './categorias.js';
+import * as presencia from './presencia.js';
+import { h, toast, icon, avisoVersion } from './ui.js';
+import { CATEGORIAS_BASE, validar } from './categorias.js';
+import { state, store, CLAVES, ctx } from './estado.js';
 import { settingsView } from './ajustes.js';
-import * as burbujas from './burbujas.js';
 import { comprasView } from './compras.js';
 import { eventoView } from './evento.js';
+import { listView, volver, eliminarEvento, eventForm, iniciarNavegacion } from './eventos.js';
 
 apariencia.apply(); // antes de dibujar nada, para que no parpadee
 
-const USER_KEY = 'amorshitos.user';
-const EVENTS_KEY = 'amorshitos.events';
-const CATS_KEY = 'amorshitos.categorias';
-const COMPRAS_KEY = 'amorshitos.compras';
-const TAREAS_KEY = 'amorshitos.tareas';
-const store = {
-  read(key) {
-    try {
-      return JSON.parse(localStorage.getItem(key));
-    } catch {
-      return null;
-    }
-  },
-  write(key, value) {
-    try {
-      if (value == null) localStorage.removeItem(key);
-      else localStorage.setItem(key, JSON.stringify(value));
-    } catch { /* sin almacenamiento */ }
-  },
-};
-
-// status: loading | login | ok | denied;  tab: eventos | compras | ajustes
-const state = {
-  status: 'loading',
-  tab: 'eventos',
-  user: store.read(USER_KEY),
-  events: store.read(EVENTS_KEY) ?? [],
-  compras: store.read(COMPRAS_KEY) ?? [],
-  borradorCompra: '', // lo que se está escribiendo en "Agregar a la lista"
-  tareas: store.read(TAREAS_KEY) ?? [], // tareas de todos los eventos
-  borradorTarea: '', // lo que se está escribiendo en "Agregar una tarea"
-  evento: null, // id del evento abierto (su página con la lista de tareas)
-  categorias: validar(store.read(CATS_KEY)) ?? CATEGORIAS_BASE,
-  filter: 'todos',
-  error: '',
-};
-if (state.user) state.status = 'ok'; // primera pantalla al instante con lo último que se vio
-
 const root = document.getElementById('app');
-
-// Un evento cuya categoría ya no existe se muestra en gris.
-const categoria = (id) => state.categorias.find((c) => c.id === id) ?? { id, nombre: 'Sin categoría', color: 'gris' };
-
-// ---------- Pantallas ----------
-
 let vistaCompras = null; // la pestaña de compras abierta, para actualizar sus listas sin redibujarla entera
 let vistaEvento = null; // la página del evento abierta, ídem
+
+// Compara datos de la nube con lo que ya se tiene: si no cambió nada, no hace falta volver a dibujar.
+const mismo = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+const falla = (err) => toast(cloud.friendlyError(err), 5000);
+
+// ---------- Pantallas ----------
 
 function render() {
   const y = window.scrollY;
@@ -78,10 +42,8 @@ function render() {
   window.scrollTo(0, y);
 }
 
-const ctx = {
-  state,
+Object.assign(ctx, {
   render,
-  categoria,
   volver,
   editarEvento: (ev) => eventForm(ev),
   eliminarEvento,
@@ -89,23 +51,21 @@ const ctx = {
   // Cambia la apariencia en este teléfono y, si toca al estilo compartido, la manda a la nube.
   setApariencia(patch) {
     const next = apariencia.save(patch);
-    actualizarBurbujas();
+    presencia.actualizar();
     if (['tema', 'fondo', 'acento', 'burbujas'].some((k) => k in patch)) {
-      cloud.saveAppearance(apariencia.compartido(next)).catch((err) => toast(cloud.friendlyError(err), 5000));
+      cloud.saveAppearance(apariencia.compartido(next)).catch(falla);
     }
     render();
   },
-  setFoto(dataUrl) {
-    return cloud.savePhoto(dataUrl);
-  },
+  setFoto: (dataUrl) => cloud.savePhoto(dataUrl),
   setCategorias(items, save = false) {
     state.categorias = items;
-    store.write(CATS_KEY, items);
+    store.write(CLAVES.categorias, items);
     if (state.filter !== 'todos' && !items.some((c) => c.id === state.filter)) state.filter = 'todos';
     render();
-    if (save) cloud.saveCategories(items).catch((err) => toast(cloud.friendlyError(err), 5000));
+    if (save) cloud.saveCategories(items).catch(falla);
   },
-};
+});
 
 const loadingView = () => h('main', { class: 'center-screen' }, h('div', { class: 'logo' }, icon('heart', 64)), h('p', { class: 'muted' }, 'Cargando…'));
 
@@ -155,275 +115,39 @@ function tabBar() {
   return h('nav', { class: 'tabbar', 'aria-label': 'Secciones' }, tab('eventos', 'Eventos', 'list'), tab('compras', 'Compras', 'cart'), tab('ajustes', 'Ajustes', 'tune'));
 }
 
-function listView() {
-  const today = todayStr();
-  const visible = state.events.filter((e) => state.filter === 'todos' || e.color === state.filter);
-  const upcoming = visible.filter((e) => e.fecha >= today).sort(byDate);
-  const past = visible.filter((e) => e.fecha < today).sort((a, b) => byDate(b, a));
-
-  // Las categorías con más eventos van primero; a igual cantidad, queda el orden de Ajustes.
-  const total = (c) => state.events.filter((e) => e.color === c.id).length;
-  const byUse = [...state.categorias].sort((a, b) => total(b) - total(a));
-  const chips = h('div', { class: 'chips', role: 'group', 'aria-label': 'Filtrar por color' },
-    chip('todos', 'Todos'),
-    ...byUse.map((c) => chip(c.id, c.nombre, c.color)));
-
-  return h('main', { class: 'page' },
-    h('header', { class: 'head' },
-      h('h1', {}, h('span', { class: 'brand' }, icon('heart', 24)), 'Amorshitos')),
-    !navigator.onLine && h('p', { class: 'banner' }, 'Sin conexión. Lo que cambies se guardará y se enviará al volver el internet.'),
-    chips,
-    upcoming.length ? groups(upcoming) : h('p', { class: 'empty' }, state.events.length
-      ? 'No hay eventos próximos con este color.'
-      : 'Aún no hay eventos. Toca el + para agregar el primero.'),
-    past.length > 0 && h('details', { class: 'past' },
-      h('summary', {}, `Eventos pasados (${past.length})`),
-      groups(past)),
-    h('button', { class: 'fab', 'aria-label': 'Agregar evento', onclick: () => eventForm() }, '+'));
-}
-
-function chip(value, label, color) {
-  return h('button', {
-    class: `chip${state.filter === value ? ' on' : ''}`,
-    'aria-pressed': String(state.filter === value),
-    style: color ? tint(color) : false,
-    onclick: () => {
-      state.filter = value;
-      render();
-    },
-  }, color && h('span', { class: 'dot' }), label);
-}
-
-function groups(list) {
-  const days = new Map();
-  for (const ev of list) {
-    if (!days.has(ev.fecha)) days.set(ev.fecha, []);
-    days.get(ev.fecha).push(ev);
-  }
-  return h('div', { class: 'days' }, [...days].map(([fecha, events]) => {
-    const label = dayLabel(fecha);
-    const detail = ['Hoy', 'Mañana', 'Ayer'].includes(label) ? dayDetail(fecha) : '';
-    return h('section', { class: 'day' },
-      h('h2', {}, label, detail && h('small', {}, detail)),
-      events.map(eventCard));
-  }));
-}
-
-function eventCard(ev) {
-  const nota = ev.nota?.trim();
-  const cat = categoria(ev.color);
-  const tareas = state.tareas.filter((t) => t.eventoId === ev.id);
-  const hechas = tareas.filter((t) => t.hecha).length;
-  return h('div', { class: 'event', style: tint(cat.color), title: cat.nombre },
-    h('span', { class: 'bar' }),
-    h('button', { type: 'button', class: 'abrir', 'aria-label': `Abrir ${ev.titulo}`, onclick: () => abrirEvento(ev.id) },
-      h('span', { class: 'when' }, timeLabel(ev)),
-      h('span', { class: 'what' },
-        h('strong', {}, ev.titulo),
-        nota && h('small', {}, nota),
-        tareas.length > 0 && h('small', { class: 'avance' }, `✓ ${hechas} de ${tareas.length} tareas`)),
-      h('span', { class: 'who' }, ev.pendiente ? 'Guardando…' : ev.por)),
-    h('button', {
-      type: 'button',
-      class: 'mas',
-      'aria-label': `Más opciones de ${ev.titulo}`,
-      onclick: (e) => openMenu(e.currentTarget, [
-        { label: 'Editar', onclick: () => eventForm(ev) },
-        { label: 'Eliminar', danger: true, onclick: () => eliminarEvento(ev) },
-      ]),
-    }, icon('more', 22)));
-}
-
-// ---------- Página de un evento ----------
-
-function abrirEvento(id) {
-  state.tab = 'eventos';
-  state.evento = id;
-  state.borradorTarea = '';
-  history.pushState({ evento: id }, ''); // así el botón "atrás" del teléfono vuelve a la lista
-  render();
-  window.scrollTo(0, 0);
-}
-
-function volver() {
-  if (history.state?.evento) history.back();
-  else {
-    state.evento = null;
-    render();
-  }
-}
-
-addEventListener('popstate', () => {
-  state.evento = history.state?.evento ?? null;
-  render();
-});
-
-async function eliminarEvento(ev) {
-  if (!(await confirmAction('Eliminar evento', `¿Eliminar "${ev.titulo}"? También desaparece para tu pareja, con sus tareas.`, 'Eliminar'))) return;
-  const eraElAbierto = state.evento === ev.id;
-  if (eraElAbierto) state.evento = null; // para que el aviso de "evento eliminado" no salga por esto
-  cloud.removeEvent(ev.id, state.tareas.filter((t) => t.eventoId === ev.id).map((t) => t.id)).catch((err) => toast(cloud.friendlyError(err), 5000));
-  if (eraElAbierto) {
-    if (history.state?.evento) history.back();
-    else render();
-  }
-}
-
-// ---------- Formulario de eventos ----------
-
-function eventForm(ev = null) {
-  const editing = !!ev;
-  const titulo = h('input', { type: 'text', value: ev?.titulo ?? '', maxLength: 120, required: true, placeholder: 'Ej.: Cena con mis papás', autocomplete: 'off' });
-  const fecha = h('input', { type: 'date', value: ev?.fecha ?? todayStr(), required: true });
-  const inicio = h('input', { type: 'time', value: ev?.inicio ?? '' });
-  const fin = h('input', { type: 'time', value: ev?.fin ?? '' });
-  const allDay = h('input', { type: 'checkbox', checked: editing ? !ev.inicio : false, id: 'allday' });
-  const nota = h('textarea', { rows: 3, maxLength: 500, placeholder: 'Opcional' }, ev?.nota ?? '');
-  const exists = (id) => state.categorias.some((c) => c.id === id);
-  let color = exists(ev?.color) ? ev.color : exists(state.filter) ? state.filter : state.categorias[0].id;
-
-  const times = h('div', { class: 'row' },
-    h('label', { class: 'field' }, 'Desde', inicio),
-    h('label', { class: 'field' }, 'Hasta', fin));
-  const syncTimes = () => {
-    times.hidden = allDay.checked;
-  };
-  allDay.addEventListener('change', syncTimes);
-  syncTimes();
-
-  const swatches = h('div', { class: 'chips wrap', role: 'radiogroup', 'aria-label': 'Color' });
-  const paint = () => {
-    swatches.replaceChildren(...state.categorias.map((c) => h('button', {
-      type: 'button',
-      class: `chip${c.id === color ? ' on' : ''}`,
-      role: 'radio',
-      'aria-checked': String(c.id === color),
-      style: tint(c.color),
-      onclick: () => {
-        color = c.id;
-        paint();
-      },
-    }, h('span', { class: 'dot' }), c.nombre)));
-  };
-  paint();
-
-  const form = h('form', {
-    class: 'stack',
-    onsubmit: (e) => {
-      e.preventDefault();
-      const data = {
-        titulo: titulo.value.trim(),
-        fecha: fecha.value,
-        inicio: allDay.checked ? '' : inicio.value,
-        fin: allDay.checked || !inicio.value ? '' : fin.value,
-        color,
-        nota: nota.value.trim(),
-      };
-      if (!data.titulo) return toast('Escribe un título.');
-      if (!data.fecha) return toast('Elige el día.');
-      if (data.inicio && data.fin && data.fin <= data.inicio) return toast('La hora de término debe ser después de la de inicio.');
-      sheet.close();
-      cloud.saveEvent(ev?.id, data, state.user).catch((err) => toast(cloud.friendlyError(err), 5000));
-      if (!navigator.onLine) toast('Sin conexión: se enviará al volver el internet.');
-    },
-  },
-  h('label', { class: 'field' }, 'Título', titulo),
-  h('label', { class: 'field' }, 'Día', fecha),
-  h('label', { class: 'check' }, allDay, 'Todo el día'),
-  times,
-  h('div', { class: 'field' }, h('span', {}, 'Color'), swatches),
-  h('label', { class: 'field' }, 'Nota', nota),
-  h('div', { class: 'row end' },
-    editing && h('button', {
-      type: 'button',
-      class: 'btn danger quiet',
-      onclick: () => {
-        sheet.close();
-        eliminarEvento(ev);
-      },
-    }, 'Eliminar'),
-    h('button', { type: 'submit', class: 'btn primary' }, editing ? 'Guardar' : 'Agregar')));
-
-  const sheet = openSheet(editing ? 'Editar evento' : 'Nuevo evento', form);
-  if (!editing) setTimeout(() => titulo.focus(), 50);
-}
-
-// ---------- Arranque ----------
-
-// ---------- Presencia: quién tiene la app abierta ----------
-
-const LATIDO_MS = 60000; // cada cuánto avisa que sigue conectado
-const VIGENCIA_MS = 150000; // sin latido en este tiempo, se considera desconectado
-let presencia = [];
-let simulada = false; // solo en localhost: ver js/simulador.js
-let latidoTimer = null;
-let refrescoTimer = null;
-
-const conectado = () => state.status === 'ok' && !!state.user && document.visibilityState === 'visible';
-
-function latir() {
-  if (conectado()) cloud.latido(state.user, true).catch(() => {});
-}
-
-function actualizarBurbujas() {
-  if (!conectado() || apariencia.load().burbujas === false) return burbujas.update({ yo: null, otros: [] });
-  const iniciales = (p) => p.iniciales || p.nombre?.charAt(0).toUpperCase() || '?';
-  // Cada persona tiene siempre el mismo color, en los dos teléfonos: se reparten según el orden de sus ids.
-  const gente = simulada ? [...presencia, { id: 'simulada', iniciales: 'LV', ultima: Date.now() }] : presencia;
-  const ids = [...new Set([state.user.uid, ...gente.map((p) => p.id)])].sort();
-  const tono = (id) => (ids.indexOf(id) === 0 ? 'var(--c-rosa)' : 'var(--c-morado)');
-  const otros = gente
-    .filter((p) => p.id !== state.user.uid && Date.now() - p.ultima < VIGENCIA_MS)
-    .map((p) => ({ id: p.id, iniciales: iniciales(p), tono: tono(p.id) }));
-  burbujas.update({ yo: { id: state.user.uid, iniciales: iniciales(state.user), tono: tono(state.user.uid) }, otros });
-}
-
-function iniciarPresencia() {
-  detenerPresencia();
-  latir();
-  latidoTimer = setInterval(latir, LATIDO_MS);
-  refrescoTimer = setInterval(actualizarBurbujas, 20000); // para notar a quien dejó de latir
-  actualizarBurbujas();
-}
-
-function detenerPresencia() {
-  clearInterval(latidoTimer);
-  clearInterval(refrescoTimer);
-}
-
-function salirDePresencia() {
-  detenerPresencia();
-  if (state.user) cloud.latido(state.user, false).catch(() => {}); // avisa que ya no está
-  burbujas.update({ yo: null, otros: [] });
-}
+// ---------- Datos que llegan de la nube ----------
 
 function setUser(user) {
   state.user = user;
   state.error = '';
-  store.write(USER_KEY, user);
+  store.write(CLAVES.user, user);
   if (user) {
     state.status = 'ok';
-    if (document.visibilityState === 'visible') iniciarPresencia();
+    if (document.visibilityState === 'visible') presencia.iniciar();
   } else {
-    detenerPresencia();
-    burbujas.update({ yo: null, otros: [] });
+    presencia.apagar();
     state.status = 'login';
     state.tab = 'eventos';
     state.events = [];
     state.compras = [];
     state.tareas = [];
     state.evento = null;
-    store.write(TAREAS_KEY, null);
-    store.write(EVENTS_KEY, null);
-    store.write(COMPRAS_KEY, null);
+    store.write(CLAVES.tareas, null);
+    store.write(CLAVES.events, null);
+    store.write(CLAVES.compras, null);
   }
   render();
 }
 
 function setEvents(list) {
+  const cambio = !mismo(state.events, list);
   state.events = list;
-  store.write(EVENTS_KEY, list.filter((e) => !e.pendiente));
-  if (state.status === 'denied') state.status = 'ok';
+  store.write(CLAVES.events, list.filter((e) => !e.pendiente));
+  if (state.status === 'denied') {
+    state.status = 'ok';
+    return render();
+  }
+  if (!cambio) return;
   if (state.evento && list.some((e) => e.id === state.evento)) {
     vistaEvento?.refresh(); // con la página abierta solo se actualiza su contenido: no se interrumpe lo que se escribe
     return;
@@ -438,42 +162,43 @@ function setEvents(list) {
 
 // Si nadie ha cambiado las categorías todavía, rige la lista inicial.
 function setCategorias(items) {
-  ctx.setCategorias(validar(items) ?? CATEGORIAS_BASE);
+  const nuevas = validar(items) ?? CATEGORIAS_BASE;
+  if (!mismo(state.categorias, nuevas)) ctx.setCategorias(nuevas);
 }
 
 // Lo que cambió la otra persona (o este mismo usuario en otro teléfono).
 function onApariencia(data) {
+  const antes = apariencia.load();
   if (data) apariencia.applyRemote(data);
-  render();
-  actualizarBurbujas(); // por si la otra persona las prendió o apagó
+  presencia.actualizar(); // por si la otra persona las prendió o apagó
+  if (!mismo(antes, apariencia.load())) render();
+}
+
+function onFoto(data) {
+  if (data && data !== apariencia.loadFoto()) {
+    apariencia.setFotoRemota(data);
+    render();
+  }
 }
 
 // Si la pestaña de compras está abierta se actualizan solo sus listas, para no interrumpir lo que se escribe.
 function onCompras(list) {
+  if (mismo(state.compras, list)) return;
   state.compras = list;
-  store.write(COMPRAS_KEY, list.filter((c) => !c.pendiente));
+  store.write(CLAVES.compras, list.filter((c) => !c.pendiente));
   vistaCompras?.refresh();
 }
 
 // Las tareas de todos los eventos: actualizan la página abierta o el avance que se ve en la lista.
 function onTareas(list) {
+  if (mismo(state.tareas, list)) return;
   state.tareas = list;
-  store.write(TAREAS_KEY, list.filter((t) => !t.pendiente));
+  store.write(CLAVES.tareas, list.filter((t) => !t.pendiente));
   if (vistaEvento) vistaEvento.refresh();
   else if (state.status === 'ok' && state.tab === 'eventos' && !state.evento) render();
 }
 
-function onPresencia(list) {
-  presencia = list;
-  actualizarBurbujas();
-}
-
-function onFoto(data) {
-  if (data) apariencia.setFotoRemota(data);
-  render();
-}
-
-function onCloudError(e) {
+function onError(e) {
   if (e?.code === 'permission-denied') {
     state.status = 'denied';
     render();
@@ -482,18 +207,16 @@ function onCloudError(e) {
   }
 }
 
-// Para probar las burbujas sin otra persona: panel que simula que la pareja se conecta y desconecta.
+// ---------- Arranque ----------
+
+// Para probar las burbujas sin otra persona: panel que simula que la pareja se conecta y desconecta (solo localhost).
 if (['localhost', '127.0.0.1'].includes(location.hostname)) {
-  import('./simulador.js').then((m) => m.init({
-    onChange: (conectada) => {
-      simulada = conectada;
-      actualizarBurbujas();
-    },
-  }));
+  import('./simulador.js').then((m) => m.init({ onChange: presencia.simular }));
 }
 
+iniciarNavegacion();
 render();
-cloud.start({ onUser: setUser, onEvents: setEvents, onCategories: setCategorias, onApariencia, onFoto, onPresencia, onCompras, onTareas, onError: onCloudError }).catch(() => {
+cloud.start({ onUser: setUser, onEvents: setEvents, onCategories: setCategorias, onApariencia, onFoto, onPresencia: presencia.onPresencia, onCompras, onTareas, onError }).catch(() => {
   // No se pudo cargar Firebase (sin internet la primera vez): si ya había sesión se sigue con lo guardado.
   if (!state.user) {
     state.status = 'login';
@@ -508,13 +231,27 @@ document.addEventListener('visibilitychange', () => {
   if (state.status !== 'ok') return;
   if (document.visibilityState === 'visible') {
     render(); // cambia "Hoy" al pasar la medianoche
-    iniciarPresencia();
+    presencia.iniciar();
   } else {
-    salirDePresencia();
+    presencia.salir();
   }
 });
 addEventListener('pagehide', () => state.user && cloud.latido(state.user, false).catch(() => {}));
 
+// Service worker: deja la app disponible sin conexión y avisa cuando hay una versión nueva.
 if ('serviceWorker' in navigator) {
-  addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+  const teniaVersion = !!navigator.serviceWorker.controller; // false solo la primera vez que se instala
+  let avisado = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!teniaVersion || avisado) return;
+    avisado = true;
+    avisoVersion(() => location.reload());
+  });
+  addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').then((reg) => {
+      const buscar = () => reg.update().catch(() => {});
+      setInterval(buscar, 30 * 60 * 1000);
+      document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && buscar());
+    }).catch(() => {});
+  });
 }

@@ -37,6 +37,16 @@ export function icon(name, size = 22) {
   return svg;
 }
 
+// Barra fija arriba: hay una versión nueva de la app. `alActualizar` recarga la página.
+export function avisoVersion(alActualizar) {
+  const barra = h('div', { class: 'aviso-version', role: 'status' },
+    h('span', {}, 'Hay una versión nueva de Amorshitos'),
+    h('button', { type: 'button', class: 'btn small primary', onclick: alActualizar }, 'Actualizar'),
+    h('button', { type: 'button', class: 'iconbtn', 'aria-label': 'Cerrar aviso', onclick: () => barra.remove() }, '✕'));
+  document.body.append(barra);
+  return barra;
+}
+
 let toastTimer;
 export function toast(msg, ms = 2600) {
   const el = document.getElementById('toast');

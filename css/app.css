@@ -610,3 +610,24 @@ button { cursor: pointer; }
 .compra > .iconbtn { flex: none; display: grid; place-items: center; width: 40px; height: 40px; padding: 0; color: var(--muted); }
 .compra > span.nombre { flex: 1; display: flex; flex-direction: column; min-width: 0; padding: 8px 0; overflow-wrap: anywhere; }
 .compra > span.nombre small { color: var(--muted); font-size: 0.78rem; }
+
+/* Aviso de versión nueva */
+.aviso-version {
+  position: fixed;
+  top: max(8px, env(safe-area-inset-top));
+  left: 8px;
+  right: 8px;
+  z-index: 12;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 8px 8px 14px;
+  border: 1px solid var(--accent);
+  border-radius: 12px;
+  background: var(--sheet, var(--card));
+  color: var(--text);
+  box-shadow: 0 6px 22px rgb(0 0 0 / 30%);
+  font-size: 0.9rem;
+}
+.aviso-version span { flex: 1; }
+.aviso-version .iconbtn { padding: 4px 8px; color: var(--muted); }
