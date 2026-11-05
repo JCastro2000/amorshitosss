@@ -163,7 +163,9 @@ button { cursor: pointer; }
   box-shadow: var(--shadow);
   text-align: left;
 }
-.event .bar { position: absolute; left: 0; top: 0; bottom: 0; width: 6px; border-radius: 12px 0 0 12px; background: var(--c); }
+/* La barra cubre el borde de la tarjeta (-1px) y la tarjeta la recorta con sus esquinas: así no asoma una línea clara. */
+.event { overflow: hidden; }
+.event .bar { position: absolute; left: -1px; top: -1px; bottom: -1px; width: 7px; background: var(--c); }
 .event .when { grid-area: when; font-variant-numeric: tabular-nums; font-size: 0.9rem; color: var(--muted); }
 .event .what { grid-area: what; display: flex; flex-direction: column; min-width: 0; }
 .event .what strong { overflow-wrap: anywhere; }
