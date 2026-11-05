@@ -37,7 +37,7 @@ service cloud.firestore {
     match /config/apariencia {
       allow read: if autorizado();
       allow create, update: if autorizado()
-        && request.resource.data.keys().hasOnly(['tema', 'fondo', 'acento', 'actualizado']);
+        && request.resource.data.keys().hasOnly(['tema', 'fondo', 'acento', 'burbujas', 'actualizado']);
     }
 
     match /config/foto {

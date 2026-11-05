@@ -1,13 +1,13 @@
 // Apariencia de la app: tema, fondo, color principal y tamaño del texto.
-// El tema, el fondo, el color y la foto son de la pareja y se sincronizan entre los teléfonos (Firestore);
-// el tamaño del texto es de cada teléfono. Todo se guarda también en el teléfono y se aplica al arrancar
+// El tema, el fondo, el color, la foto y las burbujas de conexión son de la pareja y se sincronizan entre
+// los teléfonos (Firestore); el tamaño del texto es de cada teléfono. Todo se guarda también en el teléfono y se aplica al arrancar
 // para que no parpadee.
 import { PALETA } from './categorias.js';
 
 const KEY = 'amorshitos.apariencia';
 const FOTO_KEY = 'amorshitos.foto';
 export const MAX_FOTO = 700000; // caracteres; Firestore admite 1 MB por documento
-export const BASE = { tema: 'sistema', fondo: 'ninguno', acento: 'rosa', texto: 'normal', burbujas: true }; // texto y burbujas son de cada teléfono
+export const BASE = { tema: 'sistema', fondo: 'ninguno', acento: 'rosa', texto: 'normal', burbujas: true }; // solo `texto` es de cada teléfono
 export const TEMAS = [['sistema', 'Del teléfono'], ['claro', 'Claro'], ['oscuro', 'Oscuro']];
 export const TEXTOS = { pequeno: '15px', normal: '16px', grande: '18px' };
 export const TEXTO_OPCIONES = [['pequeno', 'Pequeño'], ['normal', 'Normal'], ['grande', 'Grande']];
@@ -30,7 +30,7 @@ export function load() {
 }
 
 // Lo que se comparte con la pareja.
-export const compartido = (cfg = load()) => ({ tema: cfg.tema, fondo: cfg.fondo, acento: cfg.acento });
+export const compartido = (cfg = load()) => ({ tema: cfg.tema, fondo: cfg.fondo, acento: cfg.acento, burbujas: cfg.burbujas !== false });
 
 // Aplica lo que llegó de la nube (ignora valores desconocidos).
 export function applyRemote(data) {
@@ -38,6 +38,7 @@ export function applyRemote(data) {
   if (TEMAS.some(([id]) => id === data?.tema)) patch.tema = data.tema;
   if (FONDOS.some((f) => f.id === data?.fondo)) patch.fondo = data.fondo;
   if (PALETA.some((p) => p.id === data?.acento)) patch.acento = data.acento;
+  if (typeof data?.burbujas === 'boolean') patch.burbujas = data.burbujas;
   if (Object.keys(patch).length) save(patch);
 }
 

@@ -1,22 +1,34 @@
 // Burbujas de conexión: una burbuja con un corazón y las iniciales por cada persona que tiene la app abierta.
-// Flotan por la pantalla; cuando están las dos personas, se acercan y se juntan, y cuando una se va, se separan.
-// Las burbujas no reciben toques (no tapan nada). Con "reducir movimiento" quedan quietas abajo.
+// Flotan sin parar por la pantalla (nunca se quedan quietas tapando algo). Cuando está la otra persona, se
+// acerca hasta donde estás tú y se juntan y viajan juntas; cuando se va, tu burbuja sigue exactamente con el
+// mismo movimiento (no se reinicia) y la otra se desvanece. No reciben toques.
+// Con "reducir movimiento" quedan quietas abajo.
 
 const TAM = 64; // diámetro de la burbuja
 const ABAJO = 92; // espacio para la barra de pestañas
 const ARRIBA = 56;
+const SEPARACION = 0.38; // cuánto se solapan al juntarse (proporción del diámetro)
+const SALIDA_MS = 650; // duración del desvanecido
+const DEMORA_SALIDA_MS = 700; // la que se va sigue un momento su camino antes de desvanecerse
+const VELOCIDAD = 50; // px por segundo, igual para todas: al juntarse o separarse no hay cambio de ritmo
 
 const reducido = matchMedia('(prefers-reduced-motion: reduce)');
 let capa = null;
 let yo = null; // { id, iniciales, tono }
-let otro = null;
-const nodos = new Map(); // id → elemento
+let otro = null; // la otra persona conectada
+let saliente = null; // la otra persona justo después de irse (mientras se desvanece)
+const nodos = new Map(); // id → { el, saliendo, timer }
 let frame = 0;
 let ultimo = 0;
-let juntas = 0; // 0 = separadas, 1 = juntas (se mueve suave hacia el objetivo)
 const t0 = performance.now();
 
+// Cada burbuja avanza siempre a velocidad constante, curvando suave y rebotando en los bordes de la pantalla.
+const cuerpo = (giro, fase) => ({ x: null, y: null, a: Math.random() * Math.PI * 2, giro, fase });
+const cuerpos = { yo: cuerpo(0.9, 0), otro: cuerpo(1.1, 2.4), centro: cuerpo(0.8, 4.1) };
+
 const CORAZON = 'M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z';
+
+const zona = () => ({ x0: TAM / 2 + 8, x1: innerWidth - TAM / 2 - 8, y0: ARRIBA + TAM / 2, y1: innerHeight - ABAJO - TAM / 2 });
 
 function crear(p) {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -29,45 +41,92 @@ function crear(p) {
   iniciales.className = 'ini';
   iniciales.textContent = p.iniciales;
   const el = document.createElement('div');
-  el.className = 'burbuja';
+  el.className = 'burbuja nueva';
   el.style.setProperty('--tono', p.tono);
   el.append(svg, iniciales);
   capa.append(el);
+  requestAnimationFrame(() => requestAnimationFrame(() => el.classList.remove('nueva'))); // entra inflándose
   return el;
 }
 
-// me: { id, iniciales, tono } o null (burbujas apagadas); others: lista con el mismo formato.
+// Muestra a esta persona (la crea o, si se estaba yendo, la rescata).
+function mostrar(p) {
+  let n = nodos.get(p.id);
+  if (!n) {
+    n = { el: crear(p), saliendo: false, timer: 0 };
+    nodos.set(p.id, n);
+  } else {
+    clearTimeout(n.timer);
+    n.saliendo = false;
+    n.el.classList.remove('sale');
+    n.el.querySelector('.ini').textContent = p.iniciales;
+    n.el.style.setProperty('--tono', p.tono);
+  }
+}
+
+// La retira tras `demora` ms con un desvanecido.
+function retirar(id, demora = 0) {
+  const n = nodos.get(id);
+  if (!n || n.saliendo) return;
+  n.saliendo = true;
+  n.timer = setTimeout(() => {
+    n.el.classList.add('sale');
+    n.timer = setTimeout(() => {
+      n.el.remove();
+      nodos.delete(id);
+      if (saliente?.id === id) saliente = null;
+      if (!nodos.size) parar();
+    }, SALIDA_MS);
+  }, reducido.matches ? 0 : demora);
+}
+
+// Cuando llega la otra persona entra por arriba o por abajo, y el punto de encuentro es donde está tu burbuja.
+function prepararEncuentro() {
+  const area = zona();
+  const mitad = TAM * SEPARACION;
+  const c = cuerpos.centro;
+  colocar(cuerpos.yo, area);
+  c.x = Math.min(Math.max(cuerpos.yo.x ?? (area.x0 + area.x1) / 2, area.x0 + mitad), area.x1 - mitad);
+  c.y = cuerpos.yo.y ?? (area.y0 + area.y1) / 2;
+  c.a = cuerpos.yo.a;
+  const o = cuerpos.otro;
+  o.x = area.x0 + Math.random() * (area.x1 - area.x0);
+  o.y = Math.random() < 0.5 ? area.y0 : area.y1;
+}
+
+// me: { id, iniciales, tono } o null (burbujas apagadas); otros: lista con el mismo formato.
 export function update({ yo: me, otros }) {
   capa ??= document.getElementById('burbujas');
   if (!capa) return;
-  yo = me;
-  otro = me ? otros[0] ?? null : null;
+  const nuevoOtro = me ? otros[0] ?? null : null;
 
-  const vivos = new Map([yo, otro].filter(Boolean).map((p) => [p.id, p]));
-  for (const [id, el] of nodos) {
-    if (!vivos.has(id)) {
-      el.remove();
-      nodos.delete(id);
-    }
+  if (me) mostrar(me);
+  else if (yo) retirar(yo.id);
+
+  if (nuevoOtro) {
+    if (!otro) prepararEncuentro();
+    mostrar(nuevoOtro);
+    saliente = null;
+  } else if (otro) {
+    saliente = otro;
+    retirar(otro.id, me ? DEMORA_SALIDA_MS : 0);
   }
-  for (const [id, p] of vivos) {
-    if (!nodos.has(id)) nodos.set(id, crear(p));
-    else {
-      nodos.get(id).querySelector('.ini').textContent = p.iniciales;
-      nodos.get(id).style.setProperty('--tono', p.tono);
-    }
-  }
+  yo = me;
+  otro = nuevoOtro;
   arrancar();
 }
 
-function arrancar() {
+function parar() {
   cancelAnimationFrame(frame);
   frame = 0;
-  if (!nodos.size) return;
+}
+
+function arrancar() {
+  if (!nodos.size) return parar();
   if (reducido.matches) {
-    juntas = otro ? 1 : 0;
-    dibujar(0);
-  } else if (!document.hidden) {
+    parar();
+    dibujar(0, 0);
+  } else if (!frame && !document.hidden) {
     ultimo = performance.now();
     frame = requestAnimationFrame(paso);
   }
@@ -76,53 +135,86 @@ function arrancar() {
 function paso(ahora) {
   const dt = Math.min(0.05, (ahora - ultimo) / 1000);
   ultimo = ahora;
-  const objetivo = otro ? 1 : 0;
-  juntas += (objetivo - juntas) * (1 - Math.exp(-dt * 1.4)); // se acercan en un par de segundos
-  dibujar((ahora - t0) / 1000);
+  dibujar((ahora - t0) / 1000, dt);
   frame = requestAnimationFrame(paso);
 }
 
 const mezcla = (a, b, k) => a + (b - a) * k;
 
-// Camino suave por la pantalla (curva de Lissajous): cada burbuja tiene el suyo.
-function camino(t, f, area) {
-  const cx = (area.x0 + area.x1) / 2;
-  const cy = (area.y0 + area.y1) / 2;
-  const ax = ((area.x1 - area.x0) / 2) * f.ax;
-  const ay = ((area.y1 - area.y0) / 2) * f.ay;
-  return [
-    cx + ax * Math.sin(t * f.wx + f.px),
-    cy + ay * Math.sin(t * f.wy + f.py) + 5 * Math.sin(t * 1.7 + f.px), // un leve vaivén, como si flotara
-  ];
+// Gira `a` hacia `b` por el camino más corto.
+const girarHacia = (a, b, k) => a + Math.atan2(Math.sin(b - a), Math.cos(b - a)) * k;
+
+function colocar(c, area) {
+  if (c.x != null) return;
+  c.x = mezcla(area.x0, area.x1, Math.random());
+  c.y = mezcla(area.y0, area.y1, Math.random());
 }
 
-const CAMINOS = {
-  yo: { ax: 0.95, ay: 0.9, wx: 0.11, wy: 0.083, px: 0, py: 1.3 },
-  otro: { ax: 0.95, ay: 0.9, wx: 0.087, wy: 0.103, px: 2.4, py: 0.4 },
-  juntas: { ax: 0.7, ay: 0.7, wx: 0.07, wy: 0.057, px: 1.1, py: 2.2 },
-};
+function avanzar(c, dt, t, area) {
+  colocar(c, area);
+  c.a += Math.sin(t * 0.5 + c.fase) * c.giro * dt; // curva suave
+  c.x += Math.cos(c.a) * VELOCIDAD * dt;
+  c.y += Math.sin(c.a) * VELOCIDAD * dt;
+  if (c.x < area.x0) { c.x = area.x0; c.a = Math.PI - c.a; }
+  else if (c.x > area.x1) { c.x = area.x1; c.a = Math.PI - c.a; }
+  if (c.y < area.y0) { c.y = area.y0; c.a = -c.a; }
+  else if (c.y > area.y1) { c.y = area.y1; c.a = -c.a; }
+}
 
-function dibujar(t) {
-  const area = { x0: TAM / 2 + 8, x1: innerWidth - TAM / 2 - 8, y0: ARRIBA + TAM / 2, y1: innerHeight - ABAJO - TAM / 2 };
+function dibujar(t, dt) {
+  const area = zona();
   const quietas = reducido.matches;
-  const k = juntas * juntas * (3 - 2 * juntas); // suaviza el acercamiento
-  const pareja = [yo, otro].filter(Boolean).sort((a, b) => (a.id < b.id ? -1 : 1)); // el mismo orden en los dos teléfonos
-  const centro = quietas ? [innerWidth / 2, area.y1] : camino(t, CAMINOS.juntas, area);
+  const mitad = TAM * SEPARACION;
+  const emparejado = otro ?? saliente;
+  const juntas = !!otro && !!yo; // viajan en pareja
+  const pareja = [yo, emparejado].filter(Boolean).sort((a, b) => (a.id < b.id ? -1 : 1)); // el mismo orden en los dos teléfonos
+  const lado = (id) => (pareja.length === 2 && pareja[0].id === id ? -1 : 1);
+  let unidas = false;
+  Object.values(cuerpos).forEach((c) => colocar(c, area));
 
-  for (const [id, el] of nodos) {
-    const esYo = id === yo?.id;
-    let [x, y] = quietas
-      ? [esYo ? area.x0 + TAM : area.x1 - TAM, area.y1]
-      : camino(t, esYo ? CAMINOS.yo : CAMINOS.otro, area);
-    if (otro) {
-      const lado = pareja[0].id === id ? -1 : 1;
-      x = mezcla(x, centro[0] + lado * TAM * 0.38, k);
-      y = mezcla(y, centro[1], k);
+  if (!quietas) {
+    avanzar(cuerpos.centro, dt, t, { ...area, x0: area.x0 + mitad, x1: area.x1 - mitad }); // el punto de encuentro deja sitio a las dos
+    if (juntas) {
+      // Se acercan al punto de encuentro y lo acompañan, con la misma dirección que lleva.
+      const jala = 1 - Math.exp(-dt * 2.6);
+      const c = cuerpos.centro;
+      let lejos = 0;
+      for (const [id, b] of [[yo.id, cuerpos.yo], [otro.id, cuerpos.otro]]) {
+        avanzar(b, dt, t, area); // sigue avanzando mientras se acerca, así no queda rezagada respecto al punto de encuentro
+        const tx = c.x + lado(id) * mitad;
+        b.x = mezcla(b.x, tx, jala);
+        b.y = mezcla(b.y, c.y, jala);
+        b.a = girarHacia(b.a, c.a, jala);
+        lejos = Math.max(lejos, Math.hypot(b.x - tx, b.y - c.y));
+      }
+      unidas = lejos < 8;
+    } else {
+      // Cada una sigue por su cuenta, desde donde estaba y con la dirección que llevaba: no se reinicia nada.
+      avanzar(cuerpos.yo, dt, t, area);
+      avanzar(cuerpos.otro, dt, t, area);
     }
-    el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`;
-    el.classList.toggle('junta', !!otro && juntas > 0.97);
+  } else {
+    unidas = juntas;
+  }
+
+  for (const [id, n] of nodos) {
+    const esYo = id === yo?.id;
+    const b = esYo ? cuerpos.yo : cuerpos.otro;
+    let x;
+    let y;
+    if (quietas) {
+      [x, y] = juntas ? [innerWidth / 2 + lado(id) * mitad, area.y1] : [esYo ? area.x0 + TAM : area.x1 - TAM, area.y1];
+    } else {
+      x = b.x;
+      y = b.y + 4 * Math.sin(t * 1.7 + b.fase); // un leve vaivén, como si flotara
+    }
+    n.el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`;
+    n.el.classList.toggle('junta', unidas);
   }
 }
 
-addEventListener('resize', () => nodos.size && reducido.matches && dibujar(0));
-document.addEventListener('visibilitychange', arrancar);
+addEventListener('resize', () => nodos.size && reducido.matches && dibujar(0, 0));
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) parar();
+  else arrancar();
+});

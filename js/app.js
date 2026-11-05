@@ -66,7 +66,7 @@ const ctx = {
   setApariencia(patch) {
     const next = apariencia.save(patch);
     actualizarBurbujas();
-    if (['tema', 'fondo', 'acento'].some((k) => k in patch)) {
+    if (['tema', 'fondo', 'acento', 'burbujas'].some((k) => k in patch)) {
       cloud.saveAppearance(apariencia.compartido(next)).catch((err) => toast(cloud.friendlyError(err), 5000));
     }
     render();
@@ -358,6 +358,7 @@ function setCategorias(items) {
 function onApariencia(data) {
   if (data) apariencia.applyRemote(data);
   render();
+  actualizarBurbujas(); // por si la otra persona las prendió o apagó
 }
 
 function onPresencia(list) {

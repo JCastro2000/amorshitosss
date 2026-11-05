@@ -3,7 +3,7 @@
 // Estructura:
 //   eventos/{id}        { titulo, fecha, inicio, fin, color (id de categoría), nota, por, creado, actualizado }
 //   config/categorias   { items: [{ id, nombre, color }], actualizado }
-//   config/apariencia   { tema, fondo, acento, actualizado }   estilo compartido por la pareja
+//   config/apariencia   { tema, fondo, acento, burbujas, actualizado }   estilo compartido por la pareja
 //   config/foto         { data (imagen JPEG como texto), actualizado }   la foto de "Nuestra foto"
 //   presencia/{uid}     { nombre, iniciales, ultima }   "latido" cada minuto mientras la app está abierta
 // Solo pueden leer y escribir los correos que están en la colección "allowed" (ver firestore.rules).
@@ -110,9 +110,9 @@ export async function saveCategories(items) {
 }
 
 // Estilo compartido (tema, fondo y color) y la foto de "Nuestra foto".
-export async function saveAppearance({ tema, fondo, acento }) {
+export async function saveAppearance({ tema, fondo, acento, burbujas }) {
   const { fs, db } = await load();
-  return fs.setDoc(fs.doc(db, 'config', 'apariencia'), { tema, fondo, acento, actualizado: fs.serverTimestamp() });
+  return fs.setDoc(fs.doc(db, 'config', 'apariencia'), { tema, fondo, acento, burbujas, actualizado: fs.serverTimestamp() });
 }
 
 export async function savePhoto(data) {
