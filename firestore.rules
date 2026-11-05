@@ -1,0 +1,36 @@
+// Reglas de seguridad de Firestore.
+//
+// - Solo pueden leer y escribir quienes entran con un correo de Google verificado que tenga su
+//   documento en la colección "allowed" (un documento por correo, con el correo como ID).
+//   Los documentos de "allowed" se crean a mano en la consola de Firebase: la app no puede crearlos.
+// - Los eventos son compartidos por todas las personas autorizadas (la pareja).
+//
+// Se publican en Firebase Console → Firestore Database → Reglas.
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function verificado() {
+      return request.auth != null && request.auth.token.email_verified == true;
+    }
+
+    function autorizado() {
+      return verificado()
+        && exists(/databases/$(database)/documents/allowed/$(request.auth.token.email));
+    }
+
+    function eventoValido() {
+      let e = request.resource.data;
+      return e.titulo is string && e.titulo.size() > 0 && e.titulo.size() <= 120
+        && e.fecha is string && e.fecha.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$');
+    }
+
+    match /allowed/{email} {
+      allow get: if verificado() && request.auth.token.email == email;
+    }
+
+    match /eventos/{id} {
+      allow read, delete: if autorizado();
+      allow create, update: if autorizado() && eventoValido();
+    }
+  }
+}
