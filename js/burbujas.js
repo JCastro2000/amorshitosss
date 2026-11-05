@@ -20,6 +20,7 @@ let saliente = null; // la otra persona justo después de irse (mientras se desv
 const nodos = new Map(); // id → { el, saliendo, timer }
 let frame = 0;
 let ultimo = 0;
+let acumulado = 0; // tiempo desde el último dibujo: se dibuja a 30 cuadros por segundo para cuidar la batería
 let enPareja = false; // una vez juntas, el brillo se mantiene mientras estén las dos (aunque una vaya un poco rezagada)
 const t0 = performance.now();
 
@@ -129,14 +130,20 @@ function arrancar() {
     dibujar(0, 0);
   } else if (!frame && !document.hidden) {
     ultimo = performance.now();
+    acumulado = 0;
     frame = requestAnimationFrame(paso);
   }
 }
 
+const CUADRO_MIN = 1 / 30 - 0.003;
+
 function paso(ahora) {
-  const dt = Math.min(0.05, (ahora - ultimo) / 1000);
+  acumulado += Math.min(0.1, (ahora - ultimo) / 1000);
   ultimo = ahora;
-  dibujar((ahora - t0) / 1000, dt);
+  if (acumulado >= CUADRO_MIN) {
+    dibujar((ahora - t0) / 1000, Math.min(0.05, acumulado));
+    acumulado = 0;
+  }
   frame = requestAnimationFrame(paso);
 }
 

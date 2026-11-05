@@ -3,7 +3,8 @@
 // - Solo pueden leer y escribir quienes entran con un correo de Google verificado que tenga su
 //   documento en la colección "allowed" (un documento por correo, con el correo como ID).
 //   Los documentos de "allowed" se crean a mano en la consola de Firebase: la app no puede crearlos.
-// - Los eventos son compartidos por todas las personas autorizadas (la pareja).
+// - Cada tipo de documento solo acepta los campos que la app usa y con el tipo y tamaño esperados;
+//   cualquier otra cosa se rechaza.
 //
 // Se publican en Firebase Console → Firestore Database → Reglas.
 rules_version = '2';
@@ -18,10 +19,44 @@ service cloud.firestore {
         && exists(/databases/$(database)/documents/allowed/$(request.auth.token.email));
     }
 
+    function textoHasta(valor, max) {
+      return valor is string && valor.size() <= max;
+    }
+
     function eventoValido() {
       let e = request.resource.data;
-      return e.titulo is string && e.titulo.size() > 0 && e.titulo.size() <= 120
-        && e.fecha is string && e.fecha.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$');
+      return e.keys().hasOnly(['titulo', 'fecha', 'inicio', 'fin', 'color', 'nota', 'repite', 'por', 'creado', 'actualizado'])
+        && e.titulo is string && e.titulo.size() > 0 && e.titulo.size() <= 120
+        && e.fecha is string && e.fecha.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && (!('inicio' in e) || textoHasta(e.inicio, 5))
+        && (!('fin' in e) || textoHasta(e.fin, 5))
+        && (!('color' in e) || textoHasta(e.color, 40))
+        && (!('nota' in e) || textoHasta(e.nota, 500))
+        && (!('por' in e) || textoHasta(e.por, 40))
+        && (!('repite' in e) || e.repite in ['', 'semanal', 'mensual', 'anual']);
+    }
+
+    function tareaValida() {
+      let t = request.resource.data;
+      return t.keys().hasOnly(['texto', 'hecha', 'hechaPor', 'por', 'orden', 'ocu', 'creado', 'actualizado'])
+        && t.texto is string && t.texto.size() > 0 && t.texto.size() <= 120
+        && t.hecha is bool
+        && (!('hechaPor' in t) || textoHasta(t.hechaPor, 40))
+        && (!('por' in t) || textoHasta(t.por, 40))
+        && (!('orden' in t) || t.orden is number)
+        && (!('ocu' in t) || textoHasta(t.ocu, 10));
+    }
+
+    function compraValida() {
+      let c = request.resource.data;
+      return c.keys().hasOnly(['nombre', 'cantidad', 'comprado', 'archivado', 'veces', 'por', 'compradoPor', 'creado', 'actualizado'])
+        && c.nombre is string && c.nombre.size() > 0 && c.nombre.size() <= 80
+        && c.comprado is bool
+        && (!('cantidad' in c) || textoHasta(c.cantidad, 20))
+        && (!('archivado' in c) || c.archivado is bool)
+        && (!('veces' in c) || c.veces is number)
+        && (!('por' in c) || textoHasta(c.por, 40))
+        && (!('compradoPor' in c) || textoHasta(c.compradoPor, 40));
     }
 
     match /allowed/{email} {
@@ -35,11 +70,7 @@ service cloud.firestore {
       // Lista de tareas de cada evento.
       match /tareas/{tid} {
         allow read, delete: if autorizado();
-        allow create, update: if autorizado()
-          && request.resource.data.texto is string
-          && request.resource.data.texto.size() > 0
-          && request.resource.data.texto.size() <= 120
-          && request.resource.data.hecha is bool;
+        allow create, update: if autorizado() && tareaValida();
       }
     }
 
@@ -48,7 +79,13 @@ service cloud.firestore {
       allow read: if autorizado();
     }
 
-    // Estilo compartido (tema, fondo y color) y la foto de fondo (imagen reducida como texto).
+    // Lista de compras compartida.
+    match /compras/{id} {
+      allow read, delete: if autorizado();
+      allow create, update: if autorizado() && compraValida();
+    }
+
+    // Estilo compartido (tema, fondo, color y burbujas) y la foto de fondo (imagen reducida como texto).
     match /config/apariencia {
       allow read: if autorizado();
       allow create, update: if autorizado()
@@ -58,18 +95,19 @@ service cloud.firestore {
     match /config/foto {
       allow read: if autorizado();
       allow create, update: if autorizado()
+        && request.resource.data.keys().hasOnly(['data', 'actualizado'])
         && request.resource.data.data is string
         && request.resource.data.data.size() < 800000;
     }
 
-    // Lista de compras compartida.
-    match /compras/{id} {
-      allow read, delete: if autorizado();
+    // Categorías de color compartidas (un solo documento con la lista).
+    match /config/categorias {
+      allow read: if autorizado();
       allow create, update: if autorizado()
-        && request.resource.data.nombre is string
-        && request.resource.data.nombre.size() > 0
-        && request.resource.data.nombre.size() <= 80
-        && request.resource.data.comprado is bool;
+        && request.resource.data.keys().hasOnly(['items', 'actualizado'])
+        && request.resource.data.items is list
+        && request.resource.data.items.size() > 0
+        && request.resource.data.items.size() <= 24;
     }
 
     // Presencia: cada persona escribe solo su propio documento; la pareja los lee para ver quién está conectado.
@@ -80,15 +118,6 @@ service cloud.firestore {
         && request.resource.data.keys().hasOnly(['nombre', 'iniciales', 'ultima'])
         && request.resource.data.nombre is string && request.resource.data.nombre.size() <= 40
         && request.resource.data.iniciales is string && request.resource.data.iniciales.size() <= 3;
-    }
-
-    // Categorías de color compartidas (un solo documento con la lista).
-    match /config/categorias {
-      allow read: if autorizado();
-      allow create, update: if autorizado()
-        && request.resource.data.items is list
-        && request.resource.data.items.size() > 0
-        && request.resource.data.items.size() <= 24;
     }
   }
 }

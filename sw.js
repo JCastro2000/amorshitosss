@@ -1,7 +1,7 @@
 // Service worker: deja la app disponible sin conexión.
 // Con internet siempre carga la versión más nueva; sin internet (o si la red tarda) usa la guardada.
 // Al cambiar cualquier archivo de la app, sube VERSION.
-const VERSION = 'v10';
+const VERSION = 'v11';
 const CACHE = `amorshitos-${VERSION}`;
 const SDK_CACHE = 'amorshitos-sdk';
 const NETWORK_TIMEOUT_MS = 4000;

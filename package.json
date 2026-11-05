@@ -1,0 +1,10 @@
+{
+  "name": "amorshitos",
+  "private": true,
+  "type": "module",
+  "description": "Eventos, compras y tareas compartidos entre dos personas (PWA sin build).",
+  "scripts": {
+    "check": "node tools/check.mjs",
+    "test": "node --test \"tools/pruebas/*.test.mjs\""
+  }
+}
