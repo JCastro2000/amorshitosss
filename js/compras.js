@@ -107,6 +107,7 @@ export function comprasView(ctx) {
   refresh();
   const vista = h('main', { class: 'page' },
     h('header', { class: 'head' }, h('h1', {}, 'Compras')),
+    ctx.avisoSync?.(),
     h('form', { class: 'agregar', onsubmit: (e) => { e.preventDefault(); agregar(); } },
       input, h('button', { type: 'submit', class: 'btn primary' }, 'Agregar')),
     resumen,

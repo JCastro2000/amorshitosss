@@ -8,7 +8,7 @@ const NETWORK_TIMEOUT_MS = 4000;
 const SHELL = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
   'js/app.js', 'js/ui.js', 'js/dates.js', 'js/cloud.js', 'js/firebase-config.js',
-  'js/categorias.js', 'js/estado.js', 'js/presencia.js', 'js/eventos.js', 'js/apariencia.js', 'js/ajustes.js', 'js/burbujas.js', 'js/compras.js', 'js/evento.js',
+  'js/categorias.js', 'js/estado.js', 'js/sync.js', 'js/presencia.js', 'js/eventos.js', 'js/apariencia.js', 'js/ajustes.js', 'js/burbujas.js', 'js/compras.js', 'js/evento.js',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png',
 ];
 

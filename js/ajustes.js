@@ -1,7 +1,9 @@
 // Pestaña de ajustes: categorías de colores (compartidas), apariencia (de cada teléfono) y cuenta.
-import { h, openSheet, confirmAction, toast, icon } from './ui.js';
+import { h, openSheet, confirmAction, toast, toastDeshacer, icon } from './ui.js';
 import { PALETA, MAX_CATEGORIAS, MAX_NOMBRE, tint, nuevoId } from './categorias.js';
 import * as apariencia from './apariencia.js';
+import * as sync from './sync.js';
+import { diagnostico } from './presencia.js';
 
 // ctx: { state, render, setCategorias(items, guardar), signOut }
 export function settingsView(ctx) {
@@ -53,6 +55,11 @@ export function settingsView(ctx) {
         'Burbujas de conexión (para los dos)')),
 
     h('section', { class: 'panel' },
+      h('h2', {}, 'Estado'),
+      h('dl', { class: 'estado' }, estadoFilas()),
+      h('p', { class: 'muted small' }, 'Si algo no se sincroniza, aquí se ve por qué.')),
+
+    h('section', { class: 'panel' },
       h('h2', {}, 'Cuenta'),
       h('p', {}, h('strong', {}, state.user.name), h('br'), h('span', { class: 'muted' }, state.user.email)),
       h('button', { class: 'btn', onclick: ctx.signOut }, 'Cerrar sesión'),
@@ -95,7 +102,20 @@ function pickFoto(ctx, change) {
   input.click();
 }
 
-const countLabel =(n) => (n === 0 ? 'sin eventos' : n === 1 ? '1 evento' : `${n} eventos`);
+function estadoFilas() {
+  const hora = (t) => (t ? new Date(t).toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—');
+  const n = sync.pendientes();
+  const filas = [
+    ['Conexión', navigator.onLine ? 'En línea' : 'Sin conexión'],
+    ['Cambios sin enviar', n ? String(n) : 'Ninguno'],
+    ['Última actualización de la nube', hora(sync.info.ultimaVez)],
+    ['Presencia (burbujas)', diagnostico.ultimoError ? `Con problemas: ${diagnostico.ultimoError}` : diagnostico.ultimoLatido ? `Bien · ${hora(diagnostico.ultimoLatido)}` : '—'],
+  ];
+  if (sync.info.ultimoError) filas.push(['Último error', sync.info.ultimoError]);
+  return filas.flatMap(([k, v]) => [h('dt', {}, k), h('dd', {}, v)]);
+}
+
+const countLabel = (n) => (n === 0 ? 'sin eventos' : n === 1 ? '1 evento' : `${n} eventos`);
 
 function segmented(options, value, onPick) {
   return h('div', { class: 'segmented', role: 'radiogroup' }, options.map(([id, label]) => h('button', {
@@ -153,7 +173,9 @@ function categoryForm(ctx, cat) {
         const detail = used ? ` Sus ${used} ${used === 1 ? 'evento quedará' : 'eventos quedarán'} sin color.` : '';
         if (!(await confirmAction('Eliminar categoría', `¿Eliminar "${cat.nombre}"?${detail}`, 'Eliminar'))) return;
         sheet.close();
-        ctx.setCategorias(state.categorias.filter((c) => c.id !== cat.id), true);
+        const antes = state.categorias;
+        ctx.setCategorias(antes.filter((c) => c.id !== cat.id), true);
+        toastDeshacer(`Categoría "${cat.nombre}" eliminada`, () => ctx.setCategorias(antes, true));
       },
     }, 'Eliminar'),
     h('button', { type: 'submit', class: 'btn primary' }, editing ? 'Guardar' : 'Agregar')));

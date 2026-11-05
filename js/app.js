@@ -3,6 +3,7 @@
 import * as cloud from './cloud.js';
 import * as apariencia from './apariencia.js';
 import * as presencia from './presencia.js';
+import * as sync from './sync.js';
 import { h, toast, icon, avisoVersion } from './ui.js';
 import { CATEGORIAS_BASE, validar } from './categorias.js';
 import { state, store, CLAVES, ctx } from './estado.js';
@@ -44,6 +45,7 @@ function render() {
 
 Object.assign(ctx, {
   render,
+  avisoSync: sync.aviso,
   volver,
   editarEvento: (ev) => eventForm(ev),
   eliminarEvento,
@@ -140,6 +142,7 @@ function setUser(user) {
 }
 
 function setEvents(list) {
+  sync.marcarActualizado();
   const cambio = !mismo(state.events, list);
   state.events = list;
   store.write(CLAVES.events, list.filter((e) => !e.pendiente));
@@ -183,6 +186,7 @@ function onFoto(data) {
 
 // Si la pestaña de compras está abierta se actualizan solo sus listas, para no interrumpir lo que se escribe.
 function onCompras(list) {
+  sync.marcarActualizado();
   if (mismo(state.compras, list)) return;
   state.compras = list;
   store.write(CLAVES.compras, list.filter((c) => !c.pendiente));
@@ -191,6 +195,7 @@ function onCompras(list) {
 
 // Las tareas de todos los eventos: actualizan la página abierta o el avance que se ve en la lista.
 function onTareas(list) {
+  sync.marcarActualizado();
   if (mismo(state.tareas, list)) return;
   state.tareas = list;
   store.write(CLAVES.tareas, list.filter((t) => !t.pendiente));
@@ -199,6 +204,7 @@ function onTareas(list) {
 }
 
 function onError(e) {
+  sync.registrarError(cloud.friendlyError(e));
   if (e?.code === 'permission-denied') {
     state.status = 'denied';
     render();
@@ -225,8 +231,8 @@ cloud.start({ onUser: setUser, onEvents: setEvents, onCategories: setCategorias,
   }
 });
 
-addEventListener('online', render);
-addEventListener('offline', render);
+addEventListener('online', () => { sync.refrescar(); render(); });
+addEventListener('offline', () => { sync.refrescar(); render(); });
 document.addEventListener('visibilitychange', () => {
   if (state.status !== 'ok') return;
   if (document.visibilityState === 'visible') {

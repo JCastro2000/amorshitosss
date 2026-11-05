@@ -50,8 +50,31 @@ export function avisoVersion(alActualizar) {
 let toastTimer;
 export function toast(msg, ms = 2600) {
   const el = document.getElementById('toast');
+  el.classList.remove('accion');
   el.textContent = msg;
   el.classList.add('on');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('on'), ms);
+}
+
+// Aviso con botón "Deshacer": sirve para recuperar algo recién borrado. `alDeshacer` puede devolver una promesa.
+export function toastDeshacer(msg, alDeshacer, ms = 7000) {
+  const el = document.getElementById('toast');
+  const boton = h('button', {
+    type: 'button',
+    onclick: async () => {
+      el.classList.remove('on');
+      clearTimeout(toastTimer);
+      try {
+        await alDeshacer();
+        toast('Listo, se recuperó.');
+      } catch {
+        toast('No se pudo deshacer.', 4000);
+      }
+    },
+  }, 'Deshacer');
+  el.classList.add('accion', 'on');
+  el.replaceChildren(h('span', {}, msg), boton);
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => el.classList.remove('on'), ms);
 }
@@ -85,22 +108,40 @@ export function openMenu(anchor, items) {
 
 // Hoja que sube desde abajo. Devuelve { close }.
 export function openSheet(title, content, { onClose } = {}) {
-  const onKey = (e) => e.key === 'Escape' && close();
-  const backdrop = h('div', { class: 'backdrop', onclick: (e) => e.target === backdrop && close() },
-    h('div', { class: 'sheet', role: 'dialog', 'aria-modal': 'true', 'aria-label': title },
+  const antes = document.activeElement; // para devolver el foco al cerrar
+  const onKey = (e) => {
+    if (e.key === 'Escape') return close();
+    if (e.key !== 'Tab') return;
+    // El foco se queda dentro de la hoja mientras está abierta.
+    const dentro = [...hoja.querySelectorAll('button, input, select, textarea, a[href], [tabindex]:not([tabindex="-1"])')].filter((x) => !x.disabled && !x.hidden && x.offsetParent !== null);
+    if (!dentro.length) return;
+    const primero = dentro[0];
+    const ultimo = dentro.at(-1);
+    if (e.shiftKey && (document.activeElement === primero || !hoja.contains(document.activeElement))) {
+      e.preventDefault();
+      ultimo.focus();
+    } else if (!e.shiftKey && (document.activeElement === ultimo || !hoja.contains(document.activeElement))) {
+      e.preventDefault();
+      primero.focus();
+    }
+  };
+  const hoja = h('div', { class: 'sheet', role: 'dialog', 'aria-modal': 'true', 'aria-label': title, tabindex: '-1' },
       h('div', { class: 'sheet-head' },
         h('h2', {}, title),
         h('button', { class: 'iconbtn', 'aria-label': 'Cerrar', onclick: () => close() }, '✕')),
-      h('div', { class: 'sheet-body' }, content)));
+      h('div', { class: 'sheet-body' }, content));
+  const backdrop = h('div', { class: 'backdrop', onclick: (e) => e.target === backdrop && close() }, hoja);
   function close() {
     document.removeEventListener('keydown', onKey);
     backdrop.remove();
     document.body.classList.remove('noscroll');
+    if (antes?.isConnected) antes.focus();
     onClose?.();
   }
   document.addEventListener('keydown', onKey);
   document.body.classList.add('noscroll');
   document.body.append(backdrop);
+  (hoja.querySelector('input:not([type=checkbox]), textarea, select') ?? hoja).focus({ preventScroll: true }); // al abrir, el foco entra en la hoja
   return { close };
 }
 

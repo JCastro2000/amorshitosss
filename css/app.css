@@ -631,3 +631,12 @@ button { cursor: pointer; }
 }
 .aviso-version span { flex: 1; }
 .aviso-version .iconbtn { padding: 4px 8px; color: var(--muted); }
+
+/* Aviso con "Deshacer" */
+#toast.accion { display: flex; align-items: center; gap: 14px; pointer-events: auto; }
+#toast.accion button { padding: 4px 8px; border: 0; background: none; color: var(--accent); font-weight: 700; font-size: 0.9rem; text-transform: uppercase; }
+
+/* Panel Estado (Ajustes) */
+.estado { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 0; font-size: 0.9rem; }
+.estado dt { color: var(--muted); }
+.estado dd { margin: 0; text-align: right; overflow-wrap: anywhere; }

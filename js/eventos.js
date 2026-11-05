@@ -1,6 +1,6 @@
 // Pestaña de eventos: la lista agrupada por día, el formulario de evento y la navegación a la página de un evento.
 import * as cloud from './cloud.js';
-import { h, toast, openSheet, openMenu, confirmAction, icon } from './ui.js';
+import { h, toast, toastDeshacer, openSheet, openMenu, confirmAction, icon } from './ui.js';
 import { todayStr, dayLabel, dayDetail, timeLabel, byDate } from './dates.js';
 import { tint } from './categorias.js';
 import { state, categoria, ctx } from './estado.js';
@@ -114,7 +114,9 @@ export async function eliminarEvento(ev) {
   if (!(await confirmAction('Eliminar evento', `¿Eliminar "${ev.titulo}"? También desaparece para tu pareja, con sus tareas.`, 'Eliminar'))) return;
   const eraElAbierto = state.evento === ev.id;
   if (eraElAbierto) state.evento = null; // para que el aviso de "evento eliminado" no salga por esto
-  cloud.removeEvent(ev.id, state.tareas.filter((t) => t.eventoId === ev.id).map((t) => t.id)).catch((err) => toast(cloud.friendlyError(err), 5000));
+  const tareas = state.tareas.filter((t) => t.eventoId === ev.id);
+  cloud.removeEvent(ev.id, tareas.map((t) => t.id)).catch((err) => toast(cloud.friendlyError(err), 5000));
+  toastDeshacer(`"${ev.titulo}" eliminado`, () => cloud.restaurarEvento(ev, tareas));
   if (eraElAbierto) {
     if (history.state?.evento) history.back();
     else ctx.render();

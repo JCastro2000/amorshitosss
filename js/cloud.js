@@ -80,11 +80,11 @@ export async function start({ onUser, onEvents, onCategories, onApariencia, onFo
       // Las tareas de todos los eventos en una sola consulta (collection group): sirven para la página del evento y para el avance en la lista.
       fs.onSnapshot(fs.collectionGroup(db, 'tareas'), (snap) => onTareas(snap.docs.map((d) => {
         const x = d.data();
-        return { id: d.id, eventoId: d.ref.parent.parent.id, texto: x.texto ?? '', hecha: !!x.hecha, hechaPor: x.hechaPor ?? '', orden: x.orden ?? 0, pendiente: d.metadata.hasPendingWrites };
+        return { id: d.id, eventoId: d.ref.parent.parent.id, texto: x.texto ?? '', hecha: !!x.hecha, hechaPor: x.hechaPor ?? '', orden: x.orden ?? 0, ocu: x.ocu ?? '', pendiente: d.metadata.hasPendingWrites };
       })), onError),
       fs.onSnapshot(fs.collection(db, 'compras'), (snap) => onCompras(snap.docs.map((d) => {
         const x = d.data();
-        return { id: d.id, nombre: x.nombre ?? '', comprado: !!x.comprado, por: x.por ?? '', compradoPor: x.compradoPor ?? '', pendiente: d.metadata.hasPendingWrites };
+        return { id: d.id, nombre: x.nombre ?? '', comprado: !!x.comprado, por: x.por ?? '', compradoPor: x.compradoPor ?? '', cantidad: x.cantidad ?? '', veces: x.veces ?? 0, archivado: !!x.archivado, pendiente: d.metadata.hasPendingWrites };
       })), onError),
       fs.onSnapshot(fs.collection(db, 'presencia'), (snap) => onPresencia(snap.docs.map((d) => {
         const x = d.data({ serverTimestamps: 'estimate' });
@@ -190,6 +190,32 @@ export async function borrarCompras(ids) {
 }
 
 // Borra el evento junto con sus tareas (las que se conocen: `tareaIds`).
+// ---------- Deshacer: recupera lo que se acaba de borrar, con el mismo id ----------
+
+const sinCampos = ({ id, pendiente, eventoId, ...datos }) => datos;
+
+export async function restaurarEvento(ev, tareas = []) {
+  const { fs, db } = await load();
+  const lote = fs.writeBatch(db);
+  lote.set(fs.doc(db, 'eventos', ev.id), { ...sinCampos(ev), creado: fs.serverTimestamp(), actualizado: fs.serverTimestamp() });
+  tareas.forEach((t) => lote.set(fs.doc(db, 'eventos', ev.id, 'tareas', t.id), { ...sinCampos(t), actualizado: fs.serverTimestamp() }));
+  return lote.commit();
+}
+
+export async function restaurarTareas(eventoId, tareas) {
+  const { fs, db } = await load();
+  const lote = fs.writeBatch(db);
+  tareas.forEach((t) => lote.set(fs.doc(db, 'eventos', eventoId, 'tareas', t.id), { ...sinCampos(t), actualizado: fs.serverTimestamp() }));
+  return lote.commit();
+}
+
+export async function restaurarCompras(lista) {
+  const { fs, db } = await load();
+  const lote = fs.writeBatch(db);
+  lista.forEach((c) => lote.set(fs.doc(db, 'compras', c.id), { ...sinCampos(c), actualizado: fs.serverTimestamp() }));
+  return lote.commit();
+}
+
 export async function removeEvent(id, tareaIds = []) {
   const { fs, db } = await load();
   const lote = fs.writeBatch(db);

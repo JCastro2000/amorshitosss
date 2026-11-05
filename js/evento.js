@@ -1,7 +1,7 @@
 // Página de un evento: sus datos y una lista de tareas (con ticks) que comparten los dos.
 // Las tareas pendientes van en el orden en que se agregaron y las hechas quedan al final.
 import * as cloud from './cloud.js';
-import { h, toast, openSheet, openMenu, icon } from './ui.js';
+import { h, toast, toastDeshacer, openSheet, openMenu, icon } from './ui.js';
 import { dayLabel, dayDetail, timeLabel } from './dates.js';
 import { tint } from './categorias.js';
 
@@ -66,9 +66,16 @@ export function eventoView(ctx) {
         'aria-label': `Más opciones de "${t.texto}"`,
         onclick: (e) => openMenu(e.currentTarget, [
           { label: 'Editar', onclick: () => editar(t) },
-          { label: 'Eliminar', danger: true, onclick: () => cloud.borrarTareas(t.eventoId, [t.id]).catch(falla) },
+          { label: 'Eliminar', danger: true, onclick: () => borrar([t], 'Tarea eliminada') },
         ]),
       }, icon('more', 22)));
+  }
+
+  // Borra y deja un "Deshacer" por unos segundos.
+  function borrar(lista, mensaje) {
+    const eventoId = state.evento;
+    cloud.borrarTareas(eventoId, lista.map((t) => t.id)).catch(falla);
+    toastDeshacer(mensaje, () => cloud.restaurarTareas(eventoId, lista));
   }
 
   function editar(t) {
@@ -117,7 +124,7 @@ export function eventoView(ctx) {
           h('button', {
             type: 'button',
             class: 'btn small danger',
-            onclick: () => cloud.borrarTareas(state.evento, hechas.map((t) => t.id)).catch(falla),
+            onclick: () => borrar(hechas, hechas.length === 1 ? '1 tarea hecha eliminada' : `${hechas.length} tareas hechas eliminadas`),
           }, 'Borrar hechas')),
         h('ul', { class: 'lista-compras' }, hechas.map(fila))),
     ].filter(Boolean));
@@ -129,6 +136,7 @@ export function eventoView(ctx) {
       h('button', { type: 'button', class: 'iconbtn', 'aria-label': 'Volver a la lista de eventos', onclick: ctx.volver }, icon('back', 24)),
       titulo,
       menuEvento),
+    ctx.avisoSync?.(),
     info,
     h('div', { class: 'tareas-head' }, h('h2', {}, 'Tareas'), avance),
     h('form', { class: 'agregar', onsubmit: (e) => { e.preventDefault(); agregar(); } },
