@@ -146,7 +146,10 @@ button { cursor: pointer; }
 
 .day { margin-top: 16px; }
 .day h2 { display: flex; align-items: baseline; gap: 8px; font-size: 1.05rem; margin-bottom: 8px; }
-.day h2 small { font-weight: 400; color: var(--muted); font-size: 0.85rem; }
+/* "Hoy · jueves, 5 de noviembre": la fecha completa va del mismo tamaño y peso que el resto de los títulos. */
+.day h2 { flex-wrap: wrap; column-gap: 0.4em; }
+.day h2 small { font: inherit; }
+.day h2 small::before { content: '· '; }
 .event {
   position: relative;
   display: grid;
