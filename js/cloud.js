@@ -1,7 +1,8 @@
 // Cuenta de Google y base de datos compartida (Firebase). Los eventos viven en Firestore, no en el repositorio.
 //
 // Estructura:
-//   eventos/{id}   { titulo, fecha, inicio, fin, color, nota, por, creado, actualizado }
+//   eventos/{id}        { titulo, fecha, inicio, fin, color (id de categoría), nota, por, creado, actualizado }
+//   config/categorias   { items: [{ id, nombre, color }], actualizado }
 // Solo pueden leer y escribir los correos que están en la colección "allowed" (ver firestore.rules).
 // Firestore guarda una copia en el teléfono: sin internet se puede ver y editar, y se sincroniza al volver.
 import { firebaseConfig } from './firebase-config.js';
@@ -48,19 +49,22 @@ function load() {
   return loading;
 }
 
-// onUser(usuario | null), onEvents(lista, { pendientes }), onError(error)
-export async function start({ onUser, onEvents, onError }) {
+// onUser(usuario | null), onEvents(lista), onCategories(lista | null), onError(error)
+export async function start({ onUser, onEvents, onCategories, onError }) {
   const { auth, fs, a, db } = await load();
-  let unsubscribe = null;
+  let unsubscribe = [];
   auth.onAuthStateChanged(a, (user) => {
-    unsubscribe?.();
-    unsubscribe = null;
+    unsubscribe.forEach((u) => u());
+    unsubscribe = [];
     if (!user) return onUser(null);
     onUser({ uid: user.uid, email: user.email, name: user.displayName?.split(' ')[0] || user.email.split('@')[0] });
-    unsubscribe = fs.onSnapshot(fs.collection(db, 'eventos'), (snap) => {
-      const list = snap.docs.map((d) => ({ ...d.data(), id: d.id, pendiente: d.metadata.hasPendingWrites }));
-      onEvents(list.map(({ creado, actualizado, ...rest }) => rest));
-    }, onError);
+    unsubscribe.push(
+      fs.onSnapshot(fs.collection(db, 'eventos'), (snap) => {
+        const list = snap.docs.map((d) => ({ ...d.data(), id: d.id, pendiente: d.metadata.hasPendingWrites }));
+        onEvents(list.map(({ creado, actualizado, ...rest }) => rest));
+      }, onError),
+      fs.onSnapshot(fs.doc(db, 'config', 'categorias'), (snap) => onCategories(snap.data()?.items ?? null), onError),
+    );
   });
 }
 
@@ -82,6 +86,12 @@ export async function saveEvent(id, data, user) {
   const ref = id ? fs.doc(db, 'eventos', id) : fs.doc(fs.collection(db, 'eventos'));
   const extra = id ? {} : { por: user.name, creado: fs.serverTimestamp() };
   return fs.setDoc(ref, { ...data, ...extra, actualizado: fs.serverTimestamp() }, { merge: true });
+}
+
+// Guarda la lista completa de categorías (la ven los dos).
+export async function saveCategories(items) {
+  const { fs, db } = await load();
+  return fs.setDoc(fs.doc(db, 'config', 'categorias'), { items, actualizado: fs.serverTimestamp() });
 }
 
 export async function removeEvent(id) {

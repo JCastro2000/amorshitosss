@@ -1,20 +1,16 @@
 // Amorshitos: lista de eventos compartida entre dos personas.
 import * as cloud from './cloud.js';
-import { h, toast, openSheet, confirmAction } from './ui.js';
+import * as apariencia from './apariencia.js';
+import { h, toast, openSheet, confirmAction, icon } from './ui.js';
 import { todayStr, dayLabel, dayDetail, timeLabel, byDate } from './dates.js';
+import { CATEGORIAS_BASE, tint, validar } from './categorias.js';
+import { settingsView } from './ajustes.js';
 
-const CATEGORIAS = [
-  { id: 'rosa', nombre: 'Los dos' },
-  { id: 'azul', nombre: 'Trabajo' },
-  { id: 'verde', nombre: 'Salud' },
-  { id: 'naranja', nombre: 'Familia' },
-  { id: 'morado', nombre: 'Amigos' },
-  { id: 'gris', nombre: 'Otros' },
-];
-const categoria = (id) => CATEGORIAS.find((c) => c.id === id) ?? CATEGORIAS.at(-1);
+apariencia.apply(); // antes de dibujar nada, para que no parpadee
 
 const USER_KEY = 'amorshitos.user';
 const EVENTS_KEY = 'amorshitos.events';
+const CATS_KEY = 'amorshitos.categorias';
 const store = {
   read(key) {
     try {
@@ -31,11 +27,13 @@ const store = {
   },
 };
 
-// status: loading | login | ok | denied
+// status: loading | login | ok | denied;  tab: eventos | ajustes
 const state = {
   status: 'loading',
+  tab: 'eventos',
   user: store.read(USER_KEY),
   events: store.read(EVENTS_KEY) ?? [],
+  categorias: validar(store.read(CATS_KEY)) ?? CATEGORIAS_BASE,
   filter: 'todos',
   error: '',
 };
@@ -43,29 +41,36 @@ if (state.user) state.status = 'ok'; // primera pantalla al instante con lo últ
 
 const root = document.getElementById('app');
 
-const heart = (size = 22) => {
-  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  svg.setAttribute('viewBox', '0 0 24 24');
-  svg.setAttribute('width', size);
-  svg.setAttribute('height', size);
-  svg.setAttribute('aria-hidden', 'true');
-  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-  path.setAttribute('d', 'M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z');
-  path.setAttribute('fill', 'currentColor');
-  svg.append(path);
-  return svg;
-};
+// Un evento cuya categoría ya no existe se muestra en gris.
+const categoria = (id) => state.categorias.find((c) => c.id === id) ?? { id, nombre: 'Sin categoría', color: 'gris' };
 
 // ---------- Pantallas ----------
 
 function render() {
   const y = window.scrollY;
-  const views = { loading: loadingView, login: loginView, denied: deniedView, ok: listView };
-  root.replaceChildren(views[state.status]());
+  const views = { loading: loadingView, login: loginView, denied: deniedView };
+  if (state.status === 'ok') {
+    root.replaceChildren(state.tab === 'ajustes' ? settingsView(ctx) : listView(), tabBar());
+  } else {
+    root.replaceChildren(views[state.status]());
+  }
   window.scrollTo(0, y);
 }
 
-const loadingView = () => h('main', { class: 'center-screen' }, h('div', { class: 'logo' }, heart(64)), h('p', { class: 'muted' }, 'Cargando…'));
+const ctx = {
+  state,
+  render,
+  signOut: () => cloud.signOut(),
+  setCategorias(items, save = false) {
+    state.categorias = items;
+    store.write(CATS_KEY, items);
+    if (state.filter !== 'todos' && !items.some((c) => c.id === state.filter)) state.filter = 'todos';
+    render();
+    if (save) cloud.saveCategories(items).catch((err) => toast(cloud.friendlyError(err), 5000));
+  },
+};
+
+const loadingView = () => h('main', { class: 'center-screen' }, h('div', { class: 'logo' }, icon('heart', 64)), h('p', { class: 'muted' }, 'Cargando…'));
 
 function loginView() {
   const error = h('p', { class: 'error', hidden: !state.error }, state.error);
@@ -84,7 +89,7 @@ function loginView() {
     },
   }, 'Continuar con Google');
   return h('main', { class: 'center-screen' },
-    h('div', { class: 'logo' }, heart(72)),
+    h('div', { class: 'logo' }, icon('heart', 72)),
     h('h1', {}, 'Amorshitos'),
     h('p', { class: 'muted' }, 'Nuestros eventos, solo para nosotros dos.'),
     button, error);
@@ -92,10 +97,23 @@ function loginView() {
 
 function deniedView() {
   return h('main', { class: 'center-screen' },
-    h('div', { class: 'logo off' }, heart(72)),
+    h('div', { class: 'logo off' }, icon('heart', 72)),
     h('h1', {}, 'Sin acceso'),
     h('p', { class: 'muted' }, `La cuenta ${state.user?.email ?? ''} no está autorizada para esta app.`),
     h('button', { class: 'btn', onclick: cloud.signOut }, 'Entrar con otra cuenta'));
+}
+
+function tabBar() {
+  const tab = (id, label, ico) => h('button', {
+    class: state.tab === id ? 'on' : '',
+    'aria-current': state.tab === id ? 'page' : false,
+    onclick: () => {
+      state.tab = id;
+      render();
+      window.scrollTo(0, 0);
+    },
+  }, icon(ico, 24), h('span', {}, label));
+  return h('nav', { class: 'tabbar', 'aria-label': 'Secciones' }, tab('eventos', 'Eventos', 'list'), tab('ajustes', 'Ajustes', 'tune'));
 }
 
 function listView() {
@@ -106,12 +124,11 @@ function listView() {
 
   const chips = h('div', { class: 'chips', role: 'group', 'aria-label': 'Filtrar por color' },
     chip('todos', 'Todos'),
-    ...CATEGORIAS.map((c) => chip(c.id, c.nombre, c.id)));
+    ...state.categorias.map((c) => chip(c.id, c.nombre, c.color)));
 
   return h('main', { class: 'page' },
     h('header', { class: 'head' },
-      h('h1', {}, h('span', { class: 'brand' }, heart(24)), 'Amorshitos'),
-      h('button', { class: 'avatar', 'aria-label': 'Cuenta', onclick: accountSheet }, (state.user?.name ?? '?').charAt(0).toUpperCase())),
+      h('h1', {}, h('span', { class: 'brand' }, icon('heart', 24)), 'Amorshitos')),
     !navigator.onLine && h('p', { class: 'banner' }, 'Sin conexión. Lo que cambies se guardará y se enviará al volver el internet.'),
     chips,
     upcoming.length ? groups(upcoming) : h('p', { class: 'empty' }, state.events.length
@@ -127,7 +144,7 @@ function chip(value, label, color) {
   return h('button', {
     class: `chip${state.filter === value ? ' on' : ''}`,
     'aria-pressed': String(state.filter === value),
-    dataset: color ? { color } : {},
+    style: color ? tint(color) : false,
     onclick: () => {
       state.filter = value;
       render();
@@ -152,7 +169,8 @@ function groups(list) {
 
 function eventCard(ev) {
   const nota = ev.nota?.trim();
-  return h('button', { class: 'event', dataset: { color: ev.color }, onclick: () => eventForm(ev) },
+  const cat = categoria(ev.color);
+  return h('button', { class: 'event', style: tint(cat.color), title: cat.nombre, onclick: () => eventForm(ev) },
     h('span', { class: 'bar' }),
     h('span', { class: 'when' }, timeLabel(ev)),
     h('span', { class: 'what' },
@@ -161,19 +179,7 @@ function eventCard(ev) {
     h('span', { class: 'who' }, ev.pendiente ? 'Guardando…' : ev.por));
 }
 
-// ---------- Formularios ----------
-
-function accountSheet() {
-  const sheet = openSheet('Cuenta', h('div', { class: 'stack' },
-    h('p', {}, h('strong', {}, state.user.name), h('br'), h('span', { class: 'muted' }, state.user.email)),
-    h('button', {
-      class: 'btn',
-      onclick: async () => {
-        sheet.close();
-        await cloud.signOut();
-      },
-    }, 'Cerrar sesión')));
-}
+// ---------- Formulario de eventos ----------
 
 function eventForm(ev = null) {
   const editing = !!ev;
@@ -183,7 +189,8 @@ function eventForm(ev = null) {
   const fin = h('input', { type: 'time', value: ev?.fin ?? '' });
   const allDay = h('input', { type: 'checkbox', checked: editing ? !ev.inicio : false, id: 'allday' });
   const nota = h('textarea', { rows: 3, maxLength: 500, placeholder: 'Opcional' }, ev?.nota ?? '');
-  let color = ev?.color ?? (state.filter !== 'todos' ? state.filter : CATEGORIAS[0].id);
+  const exists = (id) => state.categorias.some((c) => c.id === id);
+  let color = exists(ev?.color) ? ev.color : exists(state.filter) ? state.filter : state.categorias[0].id;
 
   const times = h('div', { class: 'row' },
     h('label', { class: 'field' }, 'Desde', inicio),
@@ -196,12 +203,12 @@ function eventForm(ev = null) {
 
   const swatches = h('div', { class: 'chips wrap', role: 'radiogroup', 'aria-label': 'Color' });
   const paint = () => {
-    swatches.replaceChildren(...CATEGORIAS.map((c) => h('button', {
+    swatches.replaceChildren(...state.categorias.map((c) => h('button', {
       type: 'button',
       class: `chip${c.id === color ? ' on' : ''}`,
       role: 'radio',
       'aria-checked': String(c.id === color),
-      dataset: { color: c.id },
+      style: tint(c.color),
       onclick: () => {
         color = c.id;
         paint();
@@ -259,9 +266,10 @@ function setUser(user) {
   state.error = '';
   store.write(USER_KEY, user);
   if (user) {
-    if (state.status !== 'ok') state.status = 'ok';
+    state.status = 'ok';
   } else {
     state.status = 'login';
+    state.tab = 'eventos';
     state.events = [];
     store.write(EVENTS_KEY, null);
   }
@@ -275,6 +283,11 @@ function setEvents(list) {
   render();
 }
 
+// Si nadie ha cambiado las categorías todavía, rige la lista inicial.
+function setCategorias(items) {
+  ctx.setCategorias(validar(items) ?? CATEGORIAS_BASE);
+}
+
 function onCloudError(e) {
   if (e?.code === 'permission-denied') {
     state.status = 'denied';
@@ -285,7 +298,7 @@ function onCloudError(e) {
 }
 
 render();
-cloud.start({ onUser: setUser, onEvents: setEvents, onError: onCloudError }).catch(() => {
+cloud.start({ onUser: setUser, onEvents: setEvents, onCategories: setCategorias, onError: onCloudError }).catch(() => {
   // No se pudo cargar Firebase (sin internet la primera vez): si ya había sesión se sigue con lo guardado.
   if (!state.user) {
     state.status = 'login';
