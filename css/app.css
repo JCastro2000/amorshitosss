@@ -644,3 +644,10 @@ button { cursor: pointer; }
 /* Eventos que se repiten */
 .event .what .repite, .evento-info .repite { color: var(--muted); font-size: 0.8rem; }
 .evento-info .repite { margin-top: 2px; }
+
+/* Compras: cantidad, sugerencias y compartir */
+.agregar .cantidad { flex: none; width: 4.6rem; }
+.sugerencias { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 10px; }
+.sugerencias .chip { padding: 5px 10px; font-size: 0.9rem; }
+.compra .nombre .cant { color: var(--accent); font-weight: 600; }
+.head .btn.small { align-self: center; }

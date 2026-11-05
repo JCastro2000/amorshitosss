@@ -168,19 +168,38 @@ export async function borrarTareas(eventoId, ids) {
 
 // ---------- Lista de compras ----------
 
-export async function agregarCompra(nombre, user) {
+export async function agregarCompra(nombre, user, cantidad = '') {
   const { fs, db } = await load();
-  return fs.addDoc(fs.collection(db, 'compras'), { nombre, comprado: false, por: user.name, creado: fs.serverTimestamp(), actualizado: fs.serverTimestamp() });
+  return fs.addDoc(fs.collection(db, 'compras'), { nombre, cantidad, comprado: false, archivado: false, veces: 0, por: user.name, creado: fs.serverTimestamp(), actualizado: fs.serverTimestamp() });
 }
 
+// Cada vez que algo se marca como comprado suma una "vez": con eso se sugieren primero los más frecuentes.
 export async function marcarCompra(id, comprado, user) {
   const { fs, db } = await load();
-  return fs.setDoc(fs.doc(db, 'compras', id), { comprado, compradoPor: comprado ? user.name : '', actualizado: fs.serverTimestamp() }, { merge: true });
+  return fs.setDoc(fs.doc(db, 'compras', id), {
+    comprado,
+    compradoPor: comprado ? user.name : '',
+    ...(comprado && { veces: fs.increment(1) }),
+    actualizado: fs.serverTimestamp(),
+  }, { merge: true });
 }
 
-export async function renombrarCompra(id, nombre) {
+export async function editarCompra(id, nombre, cantidad) {
   const { fs, db } = await load();
-  return fs.setDoc(fs.doc(db, 'compras', id), { nombre, actualizado: fs.serverTimestamp() }, { merge: true });
+  return fs.setDoc(fs.doc(db, 'compras', id), { nombre, cantidad, actualizado: fs.serverTimestamp() }, { merge: true });
+}
+
+// Un producto archivado sale de la lista pero queda como sugerencia; reactivarlo lo vuelve a poner como pendiente.
+export async function archivarCompras(ids, archivado = true) {
+  const { fs, db } = await load();
+  const lote = fs.writeBatch(db);
+  ids.forEach((id) => lote.set(fs.doc(db, 'compras', id), { archivado, actualizado: fs.serverTimestamp() }, { merge: true }));
+  return lote.commit();
+}
+
+export async function reactivarCompra(id, cantidad) {
+  const { fs, db } = await load();
+  return fs.setDoc(fs.doc(db, 'compras', id), { comprado: false, archivado: false, compradoPor: '', ...(cantidad !== undefined && { cantidad }), actualizado: fs.serverTimestamp() }, { merge: true });
 }
 
 export async function borrarCompras(ids) {
