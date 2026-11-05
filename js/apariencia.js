@@ -7,7 +7,7 @@ import { PALETA } from './categorias.js';
 const KEY = 'amorshitos.apariencia';
 const FOTO_KEY = 'amorshitos.foto';
 export const MAX_FOTO = 700000; // caracteres; Firestore admite 1 MB por documento
-export const BASE = { tema: 'sistema', fondo: 'ninguno', acento: 'rosa', texto: 'normal' };
+export const BASE = { tema: 'sistema', fondo: 'ninguno', acento: 'rosa', texto: 'normal', burbujas: true }; // texto y burbujas son de cada teléfono
 export const TEMAS = [['sistema', 'Del teléfono'], ['claro', 'Claro'], ['oscuro', 'Oscuro']];
 export const TEXTOS = { pequeno: '15px', normal: '16px', grande: '18px' };
 export const TEXTO_OPCIONES = [['pequeno', 'Pequeño'], ['normal', 'Normal'], ['grande', 'Grande']];

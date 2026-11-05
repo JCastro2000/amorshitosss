@@ -5,6 +5,7 @@
 //   config/categorias   { items: [{ id, nombre, color }], actualizado }
 //   config/apariencia   { tema, fondo, acento, actualizado }   estilo compartido por la pareja
 //   config/foto         { data (imagen JPEG como texto), actualizado }   la foto de "Nuestra foto"
+//   presencia/{uid}     { nombre, iniciales, ultima }   "latido" cada minuto mientras la app está abierta
 // Solo pueden leer y escribir los correos que están en la colección "allowed" (ver firestore.rules).
 // Firestore guarda una copia en el teléfono: sin internet se puede ver y editar, y se sincroniza al volver.
 import { firebaseConfig } from './firebase-config.js';
@@ -51,15 +52,21 @@ function load() {
   return loading;
 }
 
-// onUser(usuario | null), onEvents(lista), onCategories(lista | null), onApariencia(datos | null), onFoto(texto | null), onError(error)
-export async function start({ onUser, onEvents, onCategories, onApariencia, onFoto, onError }) {
+// onUser(usuario | null), onEvents(lista), onCategories(lista | null), onApariencia(datos | null), onFoto(texto | null), onPresencia(lista), onError(error)
+export async function start({ onUser, onEvents, onCategories, onApariencia, onFoto, onPresencia, onError }) {
   const { auth, fs, a, db } = await load();
   let unsubscribe = [];
   auth.onAuthStateChanged(a, (user) => {
     unsubscribe.forEach((u) => u());
     unsubscribe = [];
     if (!user) return onUser(null);
-    onUser({ uid: user.uid, email: user.email, name: user.displayName?.split(' ')[0] || user.email.split('@')[0] });
+    const palabras = (user.displayName || user.email.split('@')[0]).split(/\s+/).filter(Boolean);
+    onUser({
+      uid: user.uid,
+      email: user.email,
+      name: palabras[0],
+      iniciales: palabras.slice(0, 2).map((w) => w[0]).join('').toUpperCase(),
+    });
     unsubscribe.push(
       fs.onSnapshot(fs.collection(db, 'eventos'), (snap) => {
         const list = snap.docs.map((d) => ({ ...d.data(), id: d.id, pendiente: d.metadata.hasPendingWrites }));
@@ -68,6 +75,10 @@ export async function start({ onUser, onEvents, onCategories, onApariencia, onFo
       fs.onSnapshot(fs.doc(db, 'config', 'categorias'), (snap) => onCategories(snap.data()?.items ?? null), onError),
       fs.onSnapshot(fs.doc(db, 'config', 'apariencia'), (snap) => onApariencia(snap.data() ?? null), onError),
       fs.onSnapshot(fs.doc(db, 'config', 'foto'), (snap) => onFoto(snap.data()?.data ?? null), onError),
+      fs.onSnapshot(fs.collection(db, 'presencia'), (snap) => onPresencia(snap.docs.map((d) => {
+        const x = d.data({ serverTimestamps: 'estimate' });
+        return { id: d.id, nombre: x.nombre, iniciales: x.iniciales, ultima: x.ultima?.toMillis?.() ?? 0 };
+      })), onError),
     );
   });
 }
@@ -107,6 +118,16 @@ export async function saveAppearance({ tema, fondo, acento }) {
 export async function savePhoto(data) {
   const { fs, db } = await load();
   return fs.setDoc(fs.doc(db, 'config', 'foto'), { data, actualizado: fs.serverTimestamp() });
+}
+
+// Avisa que esta persona tiene la app abierta (activo) o que ya no (la hora queda en 0).
+export async function latido(user, activo) {
+  const { fs, db } = await load();
+  return fs.setDoc(fs.doc(db, 'presencia', user.uid), {
+    nombre: user.name,
+    iniciales: user.iniciales ?? user.name.charAt(0).toUpperCase(),
+    ultima: activo ? fs.serverTimestamp() : fs.Timestamp.fromMillis(0),
+  });
 }
 
 export async function removeEvent(id) {

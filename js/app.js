@@ -5,6 +5,7 @@ import { h, toast, openSheet, confirmAction, icon } from './ui.js';
 import { todayStr, dayLabel, dayDetail, timeLabel, byDate } from './dates.js';
 import { CATEGORIAS_BASE, tint, validar } from './categorias.js';
 import { settingsView } from './ajustes.js';
+import * as burbujas from './burbujas.js';
 
 apariencia.apply(); // antes de dibujar nada, para que no parpadee
 
@@ -64,6 +65,7 @@ const ctx = {
   // Cambia la apariencia en este teléfono y, si toca al estilo compartido, la manda a la nube.
   setApariencia(patch) {
     const next = apariencia.save(patch);
+    actualizarBurbujas();
     if (['tema', 'fondo', 'acento'].some((k) => k in patch)) {
       cloud.saveAppearance(apariencia.compartido(next)).catch((err) => toast(cloud.friendlyError(err), 5000));
     }
@@ -275,13 +277,61 @@ function eventForm(ev = null) {
 
 // ---------- Arranque ----------
 
+// ---------- Presencia: quién tiene la app abierta ----------
+
+const LATIDO_MS = 60000; // cada cuánto avisa que sigue conectado
+const VIGENCIA_MS = 150000; // sin latido en este tiempo, se considera desconectado
+let presencia = [];
+let latidoTimer = null;
+let refrescoTimer = null;
+
+const conectado = () => state.status === 'ok' && !!state.user && document.visibilityState === 'visible';
+
+function latir() {
+  if (conectado()) cloud.latido(state.user, true).catch(() => {});
+}
+
+function actualizarBurbujas() {
+  if (!conectado() || apariencia.load().burbujas === false) return burbujas.update({ yo: null, otros: [] });
+  const iniciales = (p) => p.iniciales || p.nombre?.charAt(0).toUpperCase() || '?';
+  // Cada persona tiene siempre el mismo color, en los dos teléfonos: se reparten según el orden de sus ids.
+  const ids = [...new Set([state.user.uid, ...presencia.map((p) => p.id)])].sort();
+  const tono = (id) => (ids.indexOf(id) === 0 ? 'var(--c-rosa)' : 'var(--c-morado)');
+  const otros = presencia
+    .filter((p) => p.id !== state.user.uid && Date.now() - p.ultima < VIGENCIA_MS)
+    .map((p) => ({ id: p.id, iniciales: iniciales(p), tono: tono(p.id) }));
+  burbujas.update({ yo: { id: state.user.uid, iniciales: iniciales(state.user), tono: tono(state.user.uid) }, otros });
+}
+
+function iniciarPresencia() {
+  detenerPresencia();
+  latir();
+  latidoTimer = setInterval(latir, LATIDO_MS);
+  refrescoTimer = setInterval(actualizarBurbujas, 20000); // para notar a quien dejó de latir
+  actualizarBurbujas();
+}
+
+function detenerPresencia() {
+  clearInterval(latidoTimer);
+  clearInterval(refrescoTimer);
+}
+
+function salirDePresencia() {
+  detenerPresencia();
+  if (state.user) cloud.latido(state.user, false).catch(() => {}); // avisa que ya no está
+  burbujas.update({ yo: null, otros: [] });
+}
+
 function setUser(user) {
   state.user = user;
   state.error = '';
   store.write(USER_KEY, user);
   if (user) {
     state.status = 'ok';
+    if (document.visibilityState === 'visible') iniciarPresencia();
   } else {
+    detenerPresencia();
+    burbujas.update({ yo: null, otros: [] });
     state.status = 'login';
     state.tab = 'eventos';
     state.events = [];
@@ -308,6 +358,11 @@ function onApariencia(data) {
   render();
 }
 
+function onPresencia(list) {
+  presencia = list;
+  actualizarBurbujas();
+}
+
 function onFoto(data) {
   if (data) apariencia.setFotoRemota(data);
   render();
@@ -323,7 +378,7 @@ function onCloudError(e) {
 }
 
 render();
-cloud.start({ onUser: setUser, onEvents: setEvents, onCategories: setCategorias, onApariencia, onFoto, onError: onCloudError }).catch(() => {
+cloud.start({ onUser: setUser, onEvents: setEvents, onCategories: setCategorias, onApariencia, onFoto, onPresencia, onError: onCloudError }).catch(() => {
   // No se pudo cargar Firebase (sin internet la primera vez): si ya había sesión se sigue con lo guardado.
   if (!state.user) {
     state.status = 'login';
@@ -334,7 +389,16 @@ cloud.start({ onUser: setUser, onEvents: setEvents, onCategories: setCategorias,
 
 addEventListener('online', render);
 addEventListener('offline', render);
-document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && state.status === 'ok' && render()); // cambia "Hoy" al pasar la medianoche
+document.addEventListener('visibilitychange', () => {
+  if (state.status !== 'ok') return;
+  if (document.visibilityState === 'visible') {
+    render(); // cambia "Hoy" al pasar la medianoche
+    iniciarPresencia();
+  } else {
+    salirDePresencia();
+  }
+});
+addEventListener('pagehide', () => state.user && cloud.latido(state.user, false).catch(() => {}));
 
 if ('serviceWorker' in navigator) {
   addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));

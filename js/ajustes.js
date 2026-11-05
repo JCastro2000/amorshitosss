@@ -47,7 +47,10 @@ export function settingsView(ctx) {
         })))),
       h('p', { class: 'muted small' }, 'El fondo, el tema y el color se comparten entre los dos teléfonos. El tamaño del texto es solo de este teléfono.'),
       h('div', { class: 'field' }, h('span', {}, 'Tamaño del texto'),
-        segmented(apariencia.TEXTO_OPCIONES, cfg.texto, (texto) => change({ texto })))),
+        segmented(apariencia.TEXTO_OPCIONES, cfg.texto, (texto) => change({ texto }))),
+      h('label', { class: 'check' },
+        h('input', { type: 'checkbox', checked: cfg.burbujas !== false, onchange: (e) => change({ burbujas: e.target.checked }) }),
+        'Burbujas de conexión (solo en este teléfono)')),
 
     h('section', { class: 'panel' },
       h('h2', {}, 'Cuenta'),

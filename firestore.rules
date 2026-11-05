@@ -47,6 +47,16 @@ service cloud.firestore {
         && request.resource.data.data.size() < 800000;
     }
 
+    // Presencia: cada persona escribe solo su propio documento; la pareja los lee para ver quién está conectado.
+    match /presencia/{uid} {
+      allow read: if autorizado();
+      allow create, update: if autorizado()
+        && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['nombre', 'iniciales', 'ultima'])
+        && request.resource.data.nombre is string && request.resource.data.nombre.size() <= 40
+        && request.resource.data.iniciales is string && request.resource.data.iniciales.size() <= 3;
+    }
+
     // Categorías de color compartidas (un solo documento con la lista).
     match /config/categorias {
       allow read: if autorizado();
