@@ -640,3 +640,7 @@ button { cursor: pointer; }
 .estado { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 0; font-size: 0.9rem; }
 .estado dt { color: var(--muted); }
 .estado dd { margin: 0; text-align: right; overflow-wrap: anywhere; }
+
+/* Eventos que se repiten */
+.event .what .repite, .evento-info .repite { color: var(--muted); font-size: 0.8rem; }
+.evento-info .repite { margin-top: 2px; }

@@ -1,15 +1,16 @@
 // Pestaña de eventos: la lista agrupada por día, el formulario de evento y la navegación a la página de un evento.
 import * as cloud from './cloud.js';
 import { h, toast, toastDeshacer, openSheet, openMenu, confirmAction, icon } from './ui.js';
-import { todayStr, dayLabel, dayDetail, timeLabel, byDate } from './dates.js';
+import { todayStr, addDays, dayLabel, dayDetail, timeLabel, byDate, ocurrencias, etiquetaRepite, REPETICIONES } from './dates.js';
 import { tint } from './categorias.js';
-import { state, categoria, ctx } from './estado.js';
+import { state, categoria, ctx, tareasDe } from './estado.js';
+
+const HORIZONTE_DIAS = 120; // hasta dónde se muestran las repeticiones
+const MAX_REPETICIONES = 8; // por evento
 
 export function listView() {
   const today = todayStr();
-  const visible = state.events.filter((e) => state.filter === 'todos' || e.color === state.filter);
-  const upcoming = visible.filter((e) => e.fecha >= today).sort(byDate);
-  const past = visible.filter((e) => e.fecha < today).sort((a, b) => byDate(b, a));
+  const { proximos: upcoming, pasados: past } = repartir(state.events.filter((e) => state.filter === 'todos' || e.color === state.filter), today);
 
   // Las categorías con más eventos van primero; a igual cantidad, queda el orden de Ajustes.
   const total = (c) => state.events.filter((e) => e.color === c.id).length;
@@ -30,6 +31,22 @@ export function listView() {
       h('summary', {}, `Eventos pasados (${past.length})`),
       groups(past)),
     h('button', { class: 'fab', 'aria-label': 'Agregar evento', onclick: () => eventForm() }, '+'));
+}
+
+// Separa los eventos en próximos y pasados. Los que se repiten aparecen en sus próximas fechas
+// (cada una con `ocu`, su fecha, y `original`, el evento completo) y no pasan nunca a "pasados".
+export function repartir(eventos, hoy) {
+  const hasta = addDays(hoy, HORIZONTE_DIAS);
+  const proximos = [];
+  const pasados = [];
+  for (const ev of eventos) {
+    if (!ev.repite) {
+      (ev.fecha >= hoy ? proximos : pasados).push({ ...ev, ocu: ev.fecha, original: ev });
+      continue;
+    }
+    for (const f of ocurrencias(ev.fecha, ev.repite, hoy, hasta, MAX_REPETICIONES)) proximos.push({ ...ev, fecha: f, ocu: f, original: ev });
+  }
+  return { proximos: proximos.sort(byDate), pasados: pasados.sort((a, b) => byDate(b, a)) };
 }
 
 function chip(value, label, color) {
@@ -62,15 +79,16 @@ function groups(list) {
 function eventCard(ev) {
   const nota = ev.nota?.trim();
   const cat = categoria(ev.color);
-  const tareas = state.tareas.filter((t) => t.eventoId === ev.id);
+  const tareas = tareasDe(ev.original, ev.ocu);
   const hechas = tareas.filter((t) => t.hecha).length;
   return h('div', { class: 'event', style: tint(cat.color), title: cat.nombre },
     h('span', { class: 'bar' }),
-    h('button', { type: 'button', class: 'abrir', 'aria-label': `Abrir ${ev.titulo}`, onclick: () => abrirEvento(ev.id) },
+    h('button', { type: 'button', class: 'abrir', 'aria-label': `Abrir ${ev.titulo}`, onclick: () => abrirEvento(ev.id, ev.original.repite ? ev.ocu : null) },
       h('span', { class: 'when' }, timeLabel(ev)),
       h('span', { class: 'what' },
         h('strong', {}, ev.titulo),
         nota && h('small', {}, nota),
+        ev.repite && h('small', { class: 'repite' }, `↻ ${etiquetaRepite(ev.repite)}`),
         tareas.length > 0 && h('small', { class: 'avance' }, `✓ ${hechas} de ${tareas.length} tareas`)),
       h('span', { class: 'who' }, ev.pendiente ? 'Guardando…' : ev.por)),
     h('button', {
@@ -78,19 +96,20 @@ function eventCard(ev) {
       class: 'mas',
       'aria-label': `Más opciones de ${ev.titulo}`,
       onclick: (e) => openMenu(e.currentTarget, [
-        { label: 'Editar', onclick: () => eventForm(ev) },
-        { label: 'Eliminar', danger: true, onclick: () => eliminarEvento(ev) },
+        { label: ev.repite ? 'Editar (todas las repeticiones)' : 'Editar', onclick: () => eventForm(ev.original) },
+        { label: ev.repite ? 'Eliminar (todas las repeticiones)' : 'Eliminar', danger: true, onclick: () => eliminarEvento(ev.original) },
       ]),
     }, icon('more', 22)));
 }
 
 // ---------- Página de un evento ----------
 
-export function abrirEvento(id) {
+export function abrirEvento(id, ocu = null) {
   state.tab = 'eventos';
   state.evento = id;
+  state.ocu = ocu;
   state.borradorTarea = '';
-  history.pushState({ evento: id }, ''); // así el botón "atrás" del teléfono vuelve a la lista
+  history.pushState({ evento: id, ocu }, ''); // así el botón "atrás" del teléfono vuelve a la lista
   ctx.render();
   window.scrollTo(0, 0);
 }
@@ -106,6 +125,7 @@ export function volver() {
 export function iniciarNavegacion() {
   addEventListener('popstate', () => {
     state.evento = history.state?.evento ?? null;
+    state.ocu = history.state?.ocu ?? null;
     ctx.render();
   });
 }
@@ -133,6 +153,7 @@ export function eventForm(ev = null) {
   const fin = h('input', { type: 'time', value: ev?.fin ?? '' });
   const allDay = h('input', { type: 'checkbox', checked: editing ? !ev.inicio : false, id: 'allday' });
   const nota = h('textarea', { rows: 3, maxLength: 500, placeholder: 'Opcional' }, ev?.nota ?? '');
+  const repite = h('select', {}, REPETICIONES.map(([valor, etiqueta]) => h('option', { value: valor, selected: valor === (ev?.repite ?? '') }, etiqueta)));
   const exists = (id) => state.categorias.some((c) => c.id === id);
   let color = exists(ev?.color) ? ev.color : exists(state.filter) ? state.filter : state.categorias[0].id;
 
@@ -172,6 +193,7 @@ export function eventForm(ev = null) {
         fin: allDay.checked || !inicio.value ? '' : fin.value,
         color,
         nota: nota.value.trim(),
+        repite: repite.value,
       };
       if (!data.titulo) return toast('Escribe un título.');
       if (!data.fecha) return toast('Elige el día.');
@@ -185,6 +207,7 @@ export function eventForm(ev = null) {
   h('label', { class: 'field' }, 'Día', fecha),
   h('label', { class: 'check' }, allDay, 'Todo el día'),
   times,
+  h('label', { class: 'field' }, 'Repetir', repite),
   h('div', { class: 'field' }, h('span', {}, 'Color'), swatches),
   h('label', { class: 'field' }, 'Nota', nota),
   h('div', { class: 'row end' },

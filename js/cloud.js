@@ -143,9 +143,10 @@ export async function latido(user, activo) {
 
 // ---------- Tareas de un evento ----------
 
-export async function agregarTarea(eventoId, texto, user) {
+// `ocu`: si el evento se repite, la fecha de la repetición a la que pertenece la tarea.
+export async function agregarTarea(eventoId, texto, user, ocu = '') {
   const { fs, db } = await load();
-  return fs.addDoc(fs.collection(db, 'eventos', eventoId, 'tareas'), { texto, hecha: false, por: user.name, orden: Date.now(), creado: fs.serverTimestamp(), actualizado: fs.serverTimestamp() });
+  return fs.addDoc(fs.collection(db, 'eventos', eventoId, 'tareas'), { texto, hecha: false, por: user.name, orden: Date.now(), ...(ocu && { ocu }), creado: fs.serverTimestamp(), actualizado: fs.serverTimestamp() });
 }
 
 export async function marcarTarea(eventoId, id, hecha, user) {

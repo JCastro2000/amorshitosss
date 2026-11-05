@@ -2,8 +2,9 @@
 // Las tareas pendientes van en el orden en que se agregaron y las hechas quedan al final.
 import * as cloud from './cloud.js';
 import { h, toast, toastDeshacer, openSheet, openMenu, icon } from './ui.js';
-import { dayLabel, dayDetail, timeLabel } from './dates.js';
+import { dayLabel, dayDetail, timeLabel, etiquetaRepite } from './dates.js';
 import { tint } from './categorias.js';
+import { tareasDe } from './estado.js';
 
 const falla = (e) => toast(cloud.friendlyError(e), 5000);
 const porOrden = (a, b) => a.orden - b.orden;
@@ -12,7 +13,9 @@ const porOrden = (a, b) => a.orden - b.orden;
 export function eventoView(ctx) {
   const { state } = ctx;
   const evento = () => state.events.find((e) => e.id === state.evento);
-  const tareas = () => state.tareas.filter((t) => t.eventoId === state.evento);
+  // Si el evento se repite, esta página es la de una fecha concreta (state.ocu) y tiene sus propias tareas.
+  const fechaVista = () => (evento()?.repite ? state.ocu || evento().fecha : evento()?.fecha);
+  const tareas = () => (evento() ? tareasDe(evento(), fechaVista()) : []);
 
   const titulo = h('h1', {});
   const info = h('section', { class: 'evento-info' });
@@ -45,7 +48,7 @@ export function eventoView(ctx) {
     if (!texto) return;
     input.value = '';
     state.borradorTarea = '';
-    cloud.agregarTarea(state.evento, texto, state.user).catch(falla);
+    cloud.agregarTarea(state.evento, texto, state.user, evento()?.repite ? fechaVista() : '').catch(falla);
     input.focus();
   }
 
@@ -98,14 +101,16 @@ export function eventoView(ctx) {
     const ev = evento();
     if (!ev) return;
     const cat = ctx.categoria(ev.color);
-    const dia = dayLabel(ev.fecha);
+    const fecha = fechaVista();
+    const dia = dayLabel(fecha);
     const nota = ev.nota?.trim();
     titulo.textContent = ev.titulo;
     info.style = tint(cat.color);
     info.replaceChildren(...[
       h('span', { class: 'bar' }),
-      h('p', { class: 'cuando' }, ['Hoy', 'Mañana', 'Ayer'].includes(dia) ? `${dia} · ${dayDetail(ev.fecha)}` : dia),
+      h('p', { class: 'cuando' }, ['Hoy', 'Mañana', 'Ayer'].includes(dia) ? `${dia} · ${dayDetail(fecha)}` : dia),
       h('p', { class: 'hora' }, timeLabel(ev)),
+      ev.repite && h('p', { class: 'repite' }, `↻ ${etiquetaRepite(ev.repite)}`),
       h('p', { class: 'categoria' }, h('span', { class: 'dot' }), cat.nombre, ev.por && h('span', { class: 'muted' }, ` · agregado por ${ev.por}`)),
       nota && h('p', { class: 'nota' }, nota),
     ].filter(Boolean));

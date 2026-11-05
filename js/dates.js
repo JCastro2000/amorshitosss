@@ -39,3 +39,46 @@ export const timeLabel = (ev) => (!ev.inicio ? 'Todo el día' : ev.fin ? `${ev.i
 export const byDate = (a, b) => a.fecha.localeCompare(b.fecha)
   || (a.inicio ?? '').localeCompare(b.inicio ?? '')
   || a.titulo.localeCompare(b.titulo, 'es');
+
+// ---------- Eventos que se repiten ----------
+
+export const REPETICIONES = [['', 'No se repite'], ['semanal', 'Cada semana'], ['mensual', 'Cada mes'], ['anual', 'Cada año']];
+export const etiquetaRepite = (r) => REPETICIONES.find(([id]) => id === r)?.[1] ?? '';
+
+const diasDelMes = (y, m) => new Date(y, m, 0).getDate(); // m: 1 a 12
+const diasEntre = (a, b) => Math.round((parseDate(b) - parseDate(a)) / 86400000);
+const armar = (y, m, d) => `${y}-${pad(m)}-${pad(d)}`;
+
+// La fecha número `n` de una serie que empieza en `base` (n = 0 es la propia fecha base).
+// Si el día no existe en ese mes (31 de febrero, 29 de febrero sin bisiesto), cae en el último día del mes.
+export function ocurrenciaN(base, repite, n) {
+  if (repite === 'semanal') return addDays(base, 7 * n);
+  const [y, m, d] = base.split('-').map(Number);
+  if (repite === 'mensual') {
+    const meses = m - 1 + n;
+    const yy = y + Math.floor(meses / 12);
+    const mm = (meses % 12) + 1;
+    return armar(yy, mm, Math.min(d, diasDelMes(yy, mm)));
+  }
+  if (repite === 'anual') return armar(y + n, m, Math.min(d, diasDelMes(y + n, m)));
+  return base;
+}
+
+// Las fechas de la serie que caen entre `desde` y `hasta` (como máximo `max`).
+export function ocurrencias(base, repite, desde, hasta, max = 10) {
+  if (!['semanal', 'mensual', 'anual'].includes(repite)) return [];
+  let n = 0;
+  if (desde > base) { // salto aproximado para no recorrer años enteros de a una
+    const [y0, m0] = base.split('-').map(Number);
+    const [y1, m1] = desde.split('-').map(Number);
+    const estimado = repite === 'semanal' ? Math.floor(diasEntre(base, desde) / 7) : repite === 'mensual' ? (y1 - y0) * 12 + (m1 - m0) : y1 - y0;
+    n = Math.max(0, estimado - 1);
+  }
+  const fechas = [];
+  for (; fechas.length < max && n < 100000; n++) {
+    const f = ocurrenciaN(base, repite, n);
+    if (f > hasta) break;
+    if (f >= desde) fechas.push(f);
+  }
+  return fechas;
+}

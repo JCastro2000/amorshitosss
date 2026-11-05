@@ -134,6 +134,7 @@ function setUser(user) {
     state.compras = [];
     state.tareas = [];
     state.evento = null;
+    state.ocu = null;
     store.write(CLAVES.tareas, null);
     store.write(CLAVES.events, null);
     store.write(CLAVES.compras, null);

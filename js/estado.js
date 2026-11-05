@@ -36,6 +36,7 @@ export const state = {
   tareas: store.read(CLAVES.tareas) ?? [], // tareas de todos los eventos
   borradorTarea: '', // lo que se está escribiendo en "Agregar una tarea"
   evento: null, // id del evento abierto (su página con la lista de tareas)
+  ocu: null, // si el evento se repite: la fecha de la repetición que se está viendo
   categorias: validar(store.read(CLAVES.categorias)) ?? CATEGORIAS_BASE,
   filter: 'todos',
   error: '',
@@ -44,6 +45,13 @@ if (state.user) state.status = 'ok'; // primera pantalla al instante con lo últ
 
 // Un evento cuya categoría ya no existe se muestra en gris.
 export const categoria = (id) => state.categorias.find((c) => c.id === id) ?? { id, nombre: 'Sin categoría', color: 'gris' };
+
+// Las tareas de un evento. Si se repite, cada repetición (fecha `ocu`) tiene las suyas;
+// las que no tienen fecha pertenecen a la primera.
+export function tareasDe(evento, ocu) {
+  const todas = state.tareas.filter((t) => t.eventoId === evento.id);
+  return evento.repite ? todas.filter((t) => (t.ocu || evento.fecha) === ocu) : todas;
+}
 
 // Funciones que cada módulo necesita de los demás (render, volver, etc.). app.js las completa al arrancar.
 export const ctx = { state, categoria };
