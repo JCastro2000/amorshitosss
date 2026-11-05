@@ -31,6 +31,21 @@ service cloud.firestore {
     match /eventos/{id} {
       allow read, delete: if autorizado();
       allow create, update: if autorizado() && eventoValido();
+
+      // Lista de tareas de cada evento.
+      match /tareas/{tid} {
+        allow read, delete: if autorizado();
+        allow create, update: if autorizado()
+          && request.resource.data.texto is string
+          && request.resource.data.texto.size() > 0
+          && request.resource.data.texto.size() <= 120
+          && request.resource.data.hecha is bool;
+      }
+    }
+
+    // Consulta de las tareas de todos los eventos a la vez (para mostrar el avance en la lista).
+    match /{path=**}/tareas/{tid} {
+      allow read: if autorizado();
     }
 
     // Estilo compartido (tema, fondo y color) y la foto de fondo (imagen reducida como texto).

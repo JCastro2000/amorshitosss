@@ -152,20 +152,33 @@ button { cursor: pointer; }
 .day h2 small::before { content: '· '; }
 .event {
   position: relative;
-  display: grid;
-  grid-template-columns: 6.4em 1fr auto;
-  grid-template-areas: 'when what who';
-  align-items: center;
-  gap: 12px;
+  display: flex;
+  align-items: stretch;
   width: 100%;
   margin-bottom: 8px;
-  padding: 12px 14px 12px 20px;
+  padding: 0;
   border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--card);
   box-shadow: var(--shadow);
   text-align: left;
 }
+.event .abrir {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 6.4em 1fr auto;
+  grid-template-areas: 'when what who';
+  align-items: center;
+  gap: 12px;
+  padding: 12px 2px 12px 20px;
+  border: 0;
+  background: none;
+  color: inherit;
+  text-align: left;
+}
+.event .mas { flex: none; width: 44px; border: 0; background: none; color: var(--muted); display: grid; place-items: center; }
+.event .what .avance { color: var(--accent); font-weight: 600; margin-top: 2px; }
 /* La barra cubre el borde de la tarjeta (-1px) y la tarjeta la recorta con sus esquinas: así no asoma una línea clara. */
 .event { overflow: hidden; }
 .event .bar { position: absolute; left: -1px; top: -1px; bottom: -1px; width: 7px; background: var(--c); }
@@ -552,3 +565,48 @@ button { cursor: pointer; }
 .simulador button.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
 .sim-estado { padding: 2px 8px; border-radius: 999px; background: var(--line); }
 .sim-estado.on { background: var(--c-verde); color: #fff; }
+
+/* Menú de tres puntitos */
+.menu-backdrop { position: fixed; inset: 0; z-index: 11; }
+.menu {
+  position: fixed;
+  min-width: 180px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--sheet, var(--card));
+  color: var(--text);
+  box-shadow: 0 8px 28px rgb(0 0 0 / 30%);
+  display: flex;
+  flex-direction: column;
+}
+.menu button { padding: 11px 12px; border: 0; border-radius: 8px; background: none; color: inherit; font-size: 1rem; text-align: left; }
+.menu button:hover, .menu button:focus-visible { background: var(--line); outline: none; }
+.menu button.danger { color: var(--danger); }
+
+/* Página de un evento */
+.evento-head { gap: 4px; justify-content: flex-start; }
+.evento-head h1 { flex: 1; min-width: 0; font-size: 1.3rem; overflow-wrap: anywhere; }
+.evento-head .iconbtn { flex: none; display: grid; place-items: center; width: 44px; height: 44px; padding: 0; color: var(--text); }
+.evento-info {
+  position: relative;
+  margin-bottom: 18px;
+  padding: 12px 14px 12px 22px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.evento-info .bar { position: absolute; left: -1px; top: -1px; bottom: -1px; width: 7px; background: var(--c); }
+.evento-info p { margin: 0; }
+.evento-info .cuando { font-weight: 700; }
+.evento-info .hora { color: var(--muted); font-variant-numeric: tabular-nums; }
+.evento-info .categoria { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 0.9rem; }
+.evento-info .categoria .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--c); }
+.evento-info .nota { margin-top: 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.tareas-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 8px; }
+.tareas-head h2 { font-size: 1.05rem; }
+.compra > .iconbtn { flex: none; display: grid; place-items: center; width: 40px; height: 40px; padding: 0; color: var(--muted); }
+.compra > span.nombre { flex: 1; display: flex; flex-direction: column; min-width: 0; padding: 8px 0; overflow-wrap: anywhere; }
+.compra > span.nombre small { color: var(--muted); font-size: 0.78rem; }

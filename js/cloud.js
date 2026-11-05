@@ -5,6 +5,7 @@
 //   config/categorias   { items: [{ id, nombre, color }], actualizado }
 //   config/apariencia   { tema, fondo, acento, burbujas, actualizado }   estilo compartido por la pareja
 //   config/foto         { data (imagen JPEG como texto), actualizado }   la foto de "Nuestra foto"
+//   eventos/{id}/tareas/{id}   { texto, hecha, hechaPor, por, orden, creado, actualizado }   lista de tareas de cada evento
 //   compras/{id}        { nombre, comprado, por, compradoPor, creado, actualizado }   lista de compras compartida
 //   presencia/{uid}     { nombre, iniciales, ultima }   "latido" cada minuto mientras la app está abierta
 // Solo pueden leer y escribir los correos que están en la colección "allowed" (ver firestore.rules).
@@ -53,8 +54,8 @@ function load() {
   return loading;
 }
 
-// onUser(usuario | null), onEvents(lista), onCategories(lista | null), onApariencia(datos | null), onFoto(texto | null), onPresencia(lista), onCompras(lista), onError(error)
-export async function start({ onUser, onEvents, onCategories, onApariencia, onFoto, onPresencia, onCompras, onError }) {
+// onUser(usuario | null), onEvents(lista), onCategories(lista | null), onApariencia(datos | null), onFoto(texto | null), onPresencia(lista), onCompras(lista), onTareas(lista), onError(error)
+export async function start({ onUser, onEvents, onCategories, onApariencia, onFoto, onPresencia, onCompras, onTareas, onError }) {
   const { auth, fs, a, db } = await load();
   let unsubscribe = [];
   auth.onAuthStateChanged(a, (user) => {
@@ -76,6 +77,11 @@ export async function start({ onUser, onEvents, onCategories, onApariencia, onFo
       fs.onSnapshot(fs.doc(db, 'config', 'categorias'), (snap) => onCategories(snap.data()?.items ?? null), onError),
       fs.onSnapshot(fs.doc(db, 'config', 'apariencia'), (snap) => onApariencia(snap.data() ?? null), onError),
       fs.onSnapshot(fs.doc(db, 'config', 'foto'), (snap) => onFoto(snap.data()?.data ?? null), onError),
+      // Las tareas de todos los eventos en una sola consulta (collection group): sirven para la página del evento y para el avance en la lista.
+      fs.onSnapshot(fs.collectionGroup(db, 'tareas'), (snap) => onTareas(snap.docs.map((d) => {
+        const x = d.data();
+        return { id: d.id, eventoId: d.ref.parent.parent.id, texto: x.texto ?? '', hecha: !!x.hecha, hechaPor: x.hechaPor ?? '', orden: x.orden ?? 0, pendiente: d.metadata.hasPendingWrites };
+      })), onError),
       fs.onSnapshot(fs.collection(db, 'compras'), (snap) => onCompras(snap.docs.map((d) => {
         const x = d.data();
         return { id: d.id, nombre: x.nombre ?? '', comprado: !!x.comprado, por: x.por ?? '', compradoPor: x.compradoPor ?? '', pendiente: d.metadata.hasPendingWrites };
@@ -135,6 +141,30 @@ export async function latido(user, activo) {
   });
 }
 
+// ---------- Tareas de un evento ----------
+
+export async function agregarTarea(eventoId, texto, user) {
+  const { fs, db } = await load();
+  return fs.addDoc(fs.collection(db, 'eventos', eventoId, 'tareas'), { texto, hecha: false, por: user.name, orden: Date.now(), creado: fs.serverTimestamp(), actualizado: fs.serverTimestamp() });
+}
+
+export async function marcarTarea(eventoId, id, hecha, user) {
+  const { fs, db } = await load();
+  return fs.setDoc(fs.doc(db, 'eventos', eventoId, 'tareas', id), { hecha, hechaPor: hecha ? user.name : '', actualizado: fs.serverTimestamp() }, { merge: true });
+}
+
+export async function editarTarea(eventoId, id, texto) {
+  const { fs, db } = await load();
+  return fs.setDoc(fs.doc(db, 'eventos', eventoId, 'tareas', id), { texto, actualizado: fs.serverTimestamp() }, { merge: true });
+}
+
+export async function borrarTareas(eventoId, ids) {
+  const { fs, db } = await load();
+  const lote = fs.writeBatch(db);
+  ids.forEach((id) => lote.delete(fs.doc(db, 'eventos', eventoId, 'tareas', id)));
+  return lote.commit();
+}
+
 // ---------- Lista de compras ----------
 
 export async function agregarCompra(nombre, user) {
@@ -159,9 +189,13 @@ export async function borrarCompras(ids) {
   return lote.commit();
 }
 
-export async function removeEvent(id) {
+// Borra el evento junto con sus tareas (las que se conocen: `tareaIds`).
+export async function removeEvent(id, tareaIds = []) {
   const { fs, db } = await load();
-  return fs.deleteDoc(fs.doc(db, 'eventos', id));
+  const lote = fs.writeBatch(db);
+  tareaIds.forEach((t) => lote.delete(fs.doc(db, 'eventos', id, 'tareas', t)));
+  lote.delete(fs.doc(db, 'eventos', id));
+  return lote.commit();
 }
 
 // Descarga el SDK por adelantado: la ventana de Google tiene que abrirse al instante al tocar el botón.

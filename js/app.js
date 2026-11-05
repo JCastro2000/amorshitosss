@@ -1,12 +1,13 @@
 // Amorshitos: lista de eventos compartida entre dos personas.
 import * as cloud from './cloud.js';
 import * as apariencia from './apariencia.js';
-import { h, toast, openSheet, confirmAction, icon } from './ui.js';
+import { h, toast, openSheet, openMenu, confirmAction, icon } from './ui.js';
 import { todayStr, dayLabel, dayDetail, timeLabel, byDate } from './dates.js';
 import { CATEGORIAS_BASE, tint, validar } from './categorias.js';
 import { settingsView } from './ajustes.js';
 import * as burbujas from './burbujas.js';
 import { comprasView } from './compras.js';
+import { eventoView } from './evento.js';
 
 apariencia.apply(); // antes de dibujar nada, para que no parpadee
 
@@ -14,6 +15,7 @@ const USER_KEY = 'amorshitos.user';
 const EVENTS_KEY = 'amorshitos.events';
 const CATS_KEY = 'amorshitos.categorias';
 const COMPRAS_KEY = 'amorshitos.compras';
+const TAREAS_KEY = 'amorshitos.tareas';
 const store = {
   read(key) {
     try {
@@ -38,6 +40,9 @@ const state = {
   events: store.read(EVENTS_KEY) ?? [],
   compras: store.read(COMPRAS_KEY) ?? [],
   borradorCompra: '', // lo que se está escribiendo en "Agregar a la lista"
+  tareas: store.read(TAREAS_KEY) ?? [], // tareas de todos los eventos
+  borradorTarea: '', // lo que se está escribiendo en "Agregar una tarea"
+  evento: null, // id del evento abierto (su página con la lista de tareas)
   categorias: validar(store.read(CATS_KEY)) ?? CATEGORIAS_BASE,
   filter: 'todos',
   error: '',
@@ -52,14 +57,18 @@ const categoria = (id) => state.categorias.find((c) => c.id === id) ?? { id, nom
 // ---------- Pantallas ----------
 
 let vistaCompras = null; // la pestaña de compras abierta, para actualizar sus listas sin redibujarla entera
+let vistaEvento = null; // la página del evento abierta, ídem
 
 function render() {
   const y = window.scrollY;
   const views = { loading: loadingView, login: loginView, denied: deniedView };
   vistaCompras = null;
+  vistaEvento = null;
   if (state.status === 'ok') {
     let vista;
-    if (state.tab === 'ajustes') vista = settingsView(ctx);
+    if (state.evento && !state.events.some((e) => e.id === state.evento)) state.evento = null; // ya no existe
+    if (state.evento) vista = vistaEvento = eventoView(ctx);
+    else if (state.tab === 'ajustes') vista = settingsView(ctx);
     else if (state.tab === 'compras') vista = vistaCompras = comprasView(ctx);
     else vista = listView();
     root.replaceChildren(vista, tabBar());
@@ -72,6 +81,10 @@ function render() {
 const ctx = {
   state,
   render,
+  categoria,
+  volver,
+  editarEvento: (ev) => eventForm(ev),
+  eliminarEvento,
   signOut: () => cloud.signOut(),
   // Cambia la apariencia en este teléfono y, si toca al estilo compartido, la manda a la nube.
   setApariencia(patch) {
@@ -132,6 +145,8 @@ function tabBar() {
     class: state.tab === id ? 'on' : '',
     'aria-current': state.tab === id ? 'page' : false,
     onclick: () => {
+      if (state.evento && history.state?.evento) history.replaceState(null, ''); // sale de la página del evento
+      state.evento = null;
       state.tab = id;
       render();
       window.scrollTo(0, 0);
@@ -197,13 +212,61 @@ function groups(list) {
 function eventCard(ev) {
   const nota = ev.nota?.trim();
   const cat = categoria(ev.color);
-  return h('button', { class: 'event', style: tint(cat.color), title: cat.nombre, onclick: () => eventForm(ev) },
+  const tareas = state.tareas.filter((t) => t.eventoId === ev.id);
+  const hechas = tareas.filter((t) => t.hecha).length;
+  return h('div', { class: 'event', style: tint(cat.color), title: cat.nombre },
     h('span', { class: 'bar' }),
-    h('span', { class: 'when' }, timeLabel(ev)),
-    h('span', { class: 'what' },
-      h('strong', {}, ev.titulo),
-      nota && h('small', {}, nota)),
-    h('span', { class: 'who' }, ev.pendiente ? 'Guardando…' : ev.por));
+    h('button', { type: 'button', class: 'abrir', 'aria-label': `Abrir ${ev.titulo}`, onclick: () => abrirEvento(ev.id) },
+      h('span', { class: 'when' }, timeLabel(ev)),
+      h('span', { class: 'what' },
+        h('strong', {}, ev.titulo),
+        nota && h('small', {}, nota),
+        tareas.length > 0 && h('small', { class: 'avance' }, `✓ ${hechas} de ${tareas.length} tareas`)),
+      h('span', { class: 'who' }, ev.pendiente ? 'Guardando…' : ev.por)),
+    h('button', {
+      type: 'button',
+      class: 'mas',
+      'aria-label': `Más opciones de ${ev.titulo}`,
+      onclick: (e) => openMenu(e.currentTarget, [
+        { label: 'Editar', onclick: () => eventForm(ev) },
+        { label: 'Eliminar', danger: true, onclick: () => eliminarEvento(ev) },
+      ]),
+    }, icon('more', 22)));
+}
+
+// ---------- Página de un evento ----------
+
+function abrirEvento(id) {
+  state.tab = 'eventos';
+  state.evento = id;
+  state.borradorTarea = '';
+  history.pushState({ evento: id }, ''); // así el botón "atrás" del teléfono vuelve a la lista
+  render();
+  window.scrollTo(0, 0);
+}
+
+function volver() {
+  if (history.state?.evento) history.back();
+  else {
+    state.evento = null;
+    render();
+  }
+}
+
+addEventListener('popstate', () => {
+  state.evento = history.state?.evento ?? null;
+  render();
+});
+
+async function eliminarEvento(ev) {
+  if (!(await confirmAction('Eliminar evento', `¿Eliminar "${ev.titulo}"? También desaparece para tu pareja, con sus tareas.`, 'Eliminar'))) return;
+  const eraElAbierto = state.evento === ev.id;
+  if (eraElAbierto) state.evento = null; // para que el aviso de "evento eliminado" no salga por esto
+  cloud.removeEvent(ev.id, state.tareas.filter((t) => t.eventoId === ev.id).map((t) => t.id)).catch((err) => toast(cloud.friendlyError(err), 5000));
+  if (eraElAbierto) {
+    if (history.state?.evento) history.back();
+    else render();
+  }
 }
 
 // ---------- Formulario de eventos ----------
@@ -274,10 +337,9 @@ function eventForm(ev = null) {
     editing && h('button', {
       type: 'button',
       class: 'btn danger quiet',
-      onclick: async () => {
-        if (!(await confirmAction('Eliminar evento', `¿Eliminar "${ev.titulo}"? También desaparece para tu pareja.`, 'Eliminar'))) return;
+      onclick: () => {
         sheet.close();
-        cloud.removeEvent(ev.id).catch((err) => toast(cloud.friendlyError(err), 5000));
+        eliminarEvento(ev);
       },
     }, 'Eliminar'),
     h('button', { type: 'submit', class: 'btn primary' }, editing ? 'Guardar' : 'Agregar')));
@@ -349,6 +411,9 @@ function setUser(user) {
     state.tab = 'eventos';
     state.events = [];
     state.compras = [];
+    state.tareas = [];
+    state.evento = null;
+    store.write(TAREAS_KEY, null);
     store.write(EVENTS_KEY, null);
     store.write(COMPRAS_KEY, null);
   }
@@ -359,6 +424,15 @@ function setEvents(list) {
   state.events = list;
   store.write(EVENTS_KEY, list.filter((e) => !e.pendiente));
   if (state.status === 'denied') state.status = 'ok';
+  if (state.evento && list.some((e) => e.id === state.evento)) {
+    vistaEvento?.refresh(); // con la página abierta solo se actualiza su contenido: no se interrumpe lo que se escribe
+    return;
+  }
+  if (state.evento) {
+    toast('Este evento se eliminó.');
+    volver();
+    return;
+  }
   render();
 }
 
@@ -379,6 +453,14 @@ function onCompras(list) {
   state.compras = list;
   store.write(COMPRAS_KEY, list.filter((c) => !c.pendiente));
   vistaCompras?.refresh();
+}
+
+// Las tareas de todos los eventos: actualizan la página abierta o el avance que se ve en la lista.
+function onTareas(list) {
+  state.tareas = list;
+  store.write(TAREAS_KEY, list.filter((t) => !t.pendiente));
+  if (vistaEvento) vistaEvento.refresh();
+  else if (state.status === 'ok' && state.tab === 'eventos' && !state.evento) render();
 }
 
 function onPresencia(list) {
@@ -411,7 +493,7 @@ if (['localhost', '127.0.0.1'].includes(location.hostname)) {
 }
 
 render();
-cloud.start({ onUser: setUser, onEvents: setEvents, onCategories: setCategorias, onApariencia, onFoto, onPresencia, onCompras, onError: onCloudError }).catch(() => {
+cloud.start({ onUser: setUser, onEvents: setEvents, onCategories: setCategorias, onApariencia, onFoto, onPresencia, onCompras, onTareas, onError: onCloudError }).catch(() => {
   // No se pudo cargar Firebase (sin internet la primera vez): si ya había sesión se sigue con lo guardado.
   if (!state.user) {
     state.status = 'login';
