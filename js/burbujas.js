@@ -20,6 +20,7 @@ let saliente = null; // la otra persona justo después de irse (mientras se desv
 const nodos = new Map(); // id → { el, saliendo, timer }
 let frame = 0;
 let ultimo = 0;
+let enPareja = false; // una vez juntas, el brillo se mantiene mientras estén las dos (aunque una vaya un poco rezagada)
 const t0 = performance.now();
 
 // Cada burbuja avanza siempre a velocidad constante, curvando suave y rebotando en los bordes de la pantalla.
@@ -169,6 +170,7 @@ function dibujar(t, dt) {
   const juntas = !!otro && !!yo; // viajan en pareja
   const pareja = [yo, emparejado].filter(Boolean).sort((a, b) => (a.id < b.id ? -1 : 1)); // el mismo orden en los dos teléfonos
   const lado = (id) => (pareja.length === 2 && pareja[0].id === id ? -1 : 1);
+  if (!otro || !yo) enPareja = false;
   let unidas = false;
   Object.values(cuerpos).forEach((c) => colocar(c, area));
 
@@ -187,7 +189,9 @@ function dibujar(t, dt) {
         b.a = girarHacia(b.a, c.a, jala);
         lejos = Math.max(lejos, Math.hypot(b.x - tx, b.y - c.y));
       }
-      unidas = lejos < 8;
+      if (lejos < 14) enPareja = true; // ya están juntas
+      else if (lejos > 120) enPareja = false; // se desordenó (por ejemplo, giró la pantalla): vuelven a acercarse
+      unidas = enPareja;
     } else {
       // Cada una sigue por su cuenta, desde donde estaba y con la dirección que llevaba: no se reinicia nada.
       avanzar(cuerpos.yo, dt, t, area);
