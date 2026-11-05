@@ -33,6 +33,20 @@ service cloud.firestore {
       allow create, update: if autorizado() && eventoValido();
     }
 
+    // Estilo compartido (tema, fondo y color) y la foto de fondo (imagen reducida como texto).
+    match /config/apariencia {
+      allow read: if autorizado();
+      allow create, update: if autorizado()
+        && request.resource.data.keys().hasOnly(['tema', 'fondo', 'acento', 'actualizado']);
+    }
+
+    match /config/foto {
+      allow read: if autorizado();
+      allow create, update: if autorizado()
+        && request.resource.data.data is string
+        && request.resource.data.data.size() < 800000;
+    }
+
     // Categorías de color compartidas (un solo documento con la lista).
     match /config/categorias {
       allow read: if autorizado();

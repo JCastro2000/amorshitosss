@@ -7,10 +7,7 @@ import * as apariencia from './apariencia.js';
 export function settingsView(ctx) {
   const { state } = ctx;
   const cfg = apariencia.load();
-  const change = (patch) => {
-    apariencia.save(patch);
-    ctx.render();
-  };
+  const change = (patch) => ctx.setApariencia(patch);
 
   const version = h('span', {}, '');
   caches.keys().then((keys) => {
@@ -33,6 +30,9 @@ export function settingsView(ctx) {
 
     h('section', { class: 'panel' },
       h('h2', {}, 'Apariencia'),
+      h('div', { class: 'field' }, h('span', {}, 'Fondo'),
+        h('div', { class: 'fondos', role: 'radiogroup', 'aria-label': 'Fondo' }, apariencia.FONDOS.map((f) => fondoTile(ctx, f, cfg, change))),
+        cfg.fondo === 'foto' && apariencia.loadFoto() && h('button', { class: 'btn small', onclick: () => pickFoto(ctx, change) }, 'Cambiar foto')),
       h('div', { class: 'field' }, h('span', {}, 'Tema'),
         segmented(apariencia.TEMAS, cfg.tema, (tema) => change({ tema }))),
       h('div', { class: 'field' }, h('span', {}, 'Color de la app'),
@@ -45,6 +45,7 @@ export function settingsView(ctx) {
           'aria-label': p.nombre,
           onclick: () => change({ acento: p.id }),
         })))),
+      h('p', { class: 'muted small' }, 'El fondo, el tema y el color se comparten entre los dos teléfonos. El tamaño del texto es solo de este teléfono.'),
       h('div', { class: 'field' }, h('span', {}, 'Tamaño del texto'),
         segmented(apariencia.TEXTO_OPCIONES, cfg.texto, (texto) => change({ texto })))),
 
@@ -55,7 +56,43 @@ export function settingsView(ctx) {
       h('p', { class: 'muted small' }, 'Amorshitos · ', version)));
 }
 
-const countLabel = (n) => (n === 0 ? 'sin eventos' : n === 1 ? '1 evento' : `${n} eventos`);
+// Cada fondo se muestra con su propia vista previa (la misma imagen que se usa de fondo).
+function fondoTile(ctx, f, cfg, change) {
+  const on = f.id === cfg.fondo;
+  const foto = f.id === 'foto' ? apariencia.loadFoto() : null;
+  return h('button', {
+    type: 'button',
+    class: `fondo${on ? ' on' : ''}`,
+    role: 'radio',
+    'aria-checked': String(on),
+    onclick: () => {
+      if (f.id === 'foto' && !foto) return pickFoto(ctx, change);
+      change({ fondo: f.id, ...(f.acento && { acento: f.acento }) });
+    },
+  },
+  h('span', { class: `preview ${f.id}`, style: foto ? `background-image: linear-gradient(rgb(10 8 14 / 35%), rgb(10 8 14 / 35%)), url("${foto}")` : false },
+    f.id === 'foto' && !foto && h('span', { class: 'plus' }, '+')),
+  h('span', { class: 'label' }, f.nombre));
+}
+
+// Abre el selector de imágenes y deja la foto elegida como fondo.
+function pickFoto(ctx, change) {
+  const input = h('input', { type: 'file', accept: 'image/*' });
+  input.addEventListener('change', async () => {
+    const file = input.files?.[0];
+    if (!file) return;
+    try {
+      const data = await apariencia.saveFoto(file);
+      await ctx.setFoto(data); // primero la foto, para que llegue antes que el cambio de fondo
+      change({ fondo: 'foto', acento: apariencia.FONDOS.find((f) => f.id === 'foto').acento });
+    } catch (e) {
+      toast(e?.name === 'QuotaExceededError' ? 'No hay espacio para guardar la foto.' : e?.message ?? 'No se pudo usar esa imagen.', 4000);
+    }
+  });
+  input.click();
+}
+
+const countLabel =(n) => (n === 0 ? 'sin eventos' : n === 1 ? '1 evento' : `${n} eventos`);
 
 function segmented(options, value, onPick) {
   return h('div', { class: 'segmented', role: 'radiogroup' }, options.map(([id, label]) => h('button', {

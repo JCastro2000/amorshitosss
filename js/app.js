@@ -61,6 +61,17 @@ const ctx = {
   state,
   render,
   signOut: () => cloud.signOut(),
+  // Cambia la apariencia en este teléfono y, si toca al estilo compartido, la manda a la nube.
+  setApariencia(patch) {
+    const next = apariencia.save(patch);
+    if (['tema', 'fondo', 'acento'].some((k) => k in patch)) {
+      cloud.saveAppearance(apariencia.compartido(next)).catch((err) => toast(cloud.friendlyError(err), 5000));
+    }
+    render();
+  },
+  setFoto(dataUrl) {
+    return cloud.savePhoto(dataUrl);
+  },
   setCategorias(items, save = false) {
     state.categorias = items;
     store.write(CATS_KEY, items);
@@ -291,6 +302,17 @@ function setCategorias(items) {
   ctx.setCategorias(validar(items) ?? CATEGORIAS_BASE);
 }
 
+// Lo que cambió la otra persona (o este mismo usuario en otro teléfono).
+function onApariencia(data) {
+  if (data) apariencia.applyRemote(data);
+  render();
+}
+
+function onFoto(data) {
+  if (data) apariencia.setFotoRemota(data);
+  render();
+}
+
 function onCloudError(e) {
   if (e?.code === 'permission-denied') {
     state.status = 'denied';
@@ -301,7 +323,7 @@ function onCloudError(e) {
 }
 
 render();
-cloud.start({ onUser: setUser, onEvents: setEvents, onCategories: setCategorias, onError: onCloudError }).catch(() => {
+cloud.start({ onUser: setUser, onEvents: setEvents, onCategories: setCategorias, onApariencia, onFoto, onError: onCloudError }).catch(() => {
   // No se pudo cargar Firebase (sin internet la primera vez): si ya había sesión se sigue con lo guardado.
   if (!state.user) {
     state.status = 'login';

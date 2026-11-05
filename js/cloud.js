@@ -3,6 +3,8 @@
 // Estructura:
 //   eventos/{id}        { titulo, fecha, inicio, fin, color (id de categoría), nota, por, creado, actualizado }
 //   config/categorias   { items: [{ id, nombre, color }], actualizado }
+//   config/apariencia   { tema, fondo, acento, actualizado }   estilo compartido por la pareja
+//   config/foto         { data (imagen JPEG como texto), actualizado }   la foto de "Nuestra foto"
 // Solo pueden leer y escribir los correos que están en la colección "allowed" (ver firestore.rules).
 // Firestore guarda una copia en el teléfono: sin internet se puede ver y editar, y se sincroniza al volver.
 import { firebaseConfig } from './firebase-config.js';
@@ -49,8 +51,8 @@ function load() {
   return loading;
 }
 
-// onUser(usuario | null), onEvents(lista), onCategories(lista | null), onError(error)
-export async function start({ onUser, onEvents, onCategories, onError }) {
+// onUser(usuario | null), onEvents(lista), onCategories(lista | null), onApariencia(datos | null), onFoto(texto | null), onError(error)
+export async function start({ onUser, onEvents, onCategories, onApariencia, onFoto, onError }) {
   const { auth, fs, a, db } = await load();
   let unsubscribe = [];
   auth.onAuthStateChanged(a, (user) => {
@@ -64,6 +66,8 @@ export async function start({ onUser, onEvents, onCategories, onError }) {
         onEvents(list.map(({ creado, actualizado, ...rest }) => rest));
       }, onError),
       fs.onSnapshot(fs.doc(db, 'config', 'categorias'), (snap) => onCategories(snap.data()?.items ?? null), onError),
+      fs.onSnapshot(fs.doc(db, 'config', 'apariencia'), (snap) => onApariencia(snap.data() ?? null), onError),
+      fs.onSnapshot(fs.doc(db, 'config', 'foto'), (snap) => onFoto(snap.data()?.data ?? null), onError),
     );
   });
 }
@@ -92,6 +96,17 @@ export async function saveEvent(id, data, user) {
 export async function saveCategories(items) {
   const { fs, db } = await load();
   return fs.setDoc(fs.doc(db, 'config', 'categorias'), { items, actualizado: fs.serverTimestamp() });
+}
+
+// Estilo compartido (tema, fondo y color) y la foto de "Nuestra foto".
+export async function saveAppearance({ tema, fondo, acento }) {
+  const { fs, db } = await load();
+  return fs.setDoc(fs.doc(db, 'config', 'apariencia'), { tema, fondo, acento, actualizado: fs.serverTimestamp() });
+}
+
+export async function savePhoto(data) {
+  const { fs, db } = await load();
+  return fs.setDoc(fs.doc(db, 'config', 'foto'), { data, actualizado: fs.serverTimestamp() });
 }
 
 export async function removeEvent(id) {
